@@ -54,9 +54,10 @@ private:
 		Vertex(XMFLOAT3 pos)
 			:position(pos) {}
 	};
-	struct HeapOffsets {
+	struct IndexesInHeap {
 		uint32_t TlasIndex;
 		uint32_t camIndex;
+		uint32_t instanceDataIndex;
 	};
 	struct VertexM
 	{
@@ -167,6 +168,7 @@ private:
 	// Create a CBs for each instance (for example materials)
 	void CreatePerInstanceConstantBuffers();
 	std::vector<ComPtr<ID3D12Resource>> m_perInstanceConstantBuffers;
+	uint32_t m_instanceDataHeapIndex;
 	//----------------------------------------
 	// #RTX SHADOWS
 	ComPtr<IDxcBlob> m_shadowLibrary;
@@ -183,18 +185,8 @@ private:
 	std::vector < D3D12_VERTEX_BUFFER_VIEW> m_modelVBVs;
 	std::vector < D3D12_INDEX_BUFFER_VIEW> m_modelIBVs;
 	DXGI_FORMAT m_modelIndexFormat = DXGI_FORMAT_R32_UINT;
-	// MODEL LOADING 2.0
-	void LoadModel2(const std::string& name);
-	tinygltf::Model m_TestModel2;
-
-	std::pair<ComPtr<ID3D12Resource>, uint32_t> m_modelVertexAndNum2;
-	std::pair<ComPtr<ID3D12Resource>, uint32_t> m_modelIndexAndNum2;
-
-	D3D12_VERTEX_BUFFER_VIEW m_modelVBV2;
-	D3D12_INDEX_BUFFER_VIEW m_modelIBV2;
-	DXGI_FORMAT m_modelIndexFormat2 = DXGI_FORMAT_R32_UINT;
-
+	
 	// Bindless
 	uint32_t GetCBV_SRV_UAVDescriptorIndex(ID3D12Resource* resource, ID3D12DescriptorHeap* heap) const;
-
+	IndexesInHeap m_HeapIndexes;
 };

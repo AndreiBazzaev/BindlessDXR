@@ -14,3 +14,11 @@ struct Attributes
 {
   float2 bary;
 };
+
+// BINDLESS---------------
+struct HeapOffsets {
+	uint TlasIndex;
+	uint camIndex;
+	uint instanceDataIndex;
+};
+ConstantBuffer<HeapOffsets> renderResource :register (b0, space1);

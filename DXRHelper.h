@@ -43,6 +43,10 @@ inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
                                                   initState, nullptr, IID_PPV_ARGS(&pBuffer)));
   return pBuffer;
 }
+
+#ifndef ROUND_UP
+#define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
+#endif
 inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type)
 {
     switch (type) {
@@ -79,9 +83,6 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
     return heapIndex - 1;
 }
 
-#ifndef ROUND_UP
-#define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
-#endif
 
 // Specifies a heap used for uploading. This heap type has CPU access optimized
 // for uploading to the GPU.

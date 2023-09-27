@@ -18,12 +18,7 @@ struct CamStruct {
 // Raytracing acceleration structure, accessed as a SRV
 //RaytracingAccelerationStructure SceneBVH : register(t0);
 
-// BINDLESS---------------
-struct HeapOffsets {
-	uint TlasIndex;
-	uint camIndex;
-};
-ConstantBuffer<HeapOffsets> renderResource :register (b0, space1);
+
 [shader("raygeneration")] 
 void RayGen() {
 	// Initialize the ray payload (data that is retrieved ffrom a single ray)

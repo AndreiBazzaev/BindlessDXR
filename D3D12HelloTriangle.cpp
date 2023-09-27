@@ -23,6 +23,10 @@
 #include "Windowsx.h"
 #include <iostream>
 #define NumRayTypes 2
+#define NUM_HEAP_INDEXES 3
+#ifndef ROUND_UP
+#define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
+#endif
 D3D12HelloTriangle::D3D12HelloTriangle(UINT width, UINT height, std::wstring name) :
 	DXSample(width, height, name),
 	m_frameIndex(0),
@@ -50,19 +54,17 @@ void D3D12HelloTriangle::OnInit()
 	// Setup the acceleration structures (AS) for raytracing. When setting up 
 	// geometry, each bottom-level AS has its own transform matrix. 
 	CreateAccelerationStructures();
-
+	// Allocate the buffer for output #RTX image
+	CreateRaytracingOutputBuffer();
 	//QUESTIONABLE IF WE NEED IT HERE 
 	ThrowIfFailed(m_commandList->Close());
 
 	CreateRaytracingPipeline();
-	CreatePerInstanceConstantBuffers();
-
-	// Allocate the buffer for output #RTX image
-	CreateRaytracingOutputBuffer();
 	// Camera
 	nv_helpers_dx12::CameraManip.setWindowSize(GetWidth(), GetHeight());
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	CreateCameraBuffer();
+	CreatePerInstanceConstantBuffers();
 	// Create the buffer containing the raytracing result (always output in a
 	// UAV), and create the heap referencing the resources used by the raytracing,
 	// such as the acceleration structure
@@ -90,14 +92,12 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateRayGenSignature() {
 // Create #RTX  HIT root signture (is empty for now, no resources needed)
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateHitSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
-	// CB colors
-	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_CBV, 0);
 	// vertices data
 	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0); 
 	// indices
 	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 1);
 	// Scene BVH
-	rsc.AddHeapRangesParameter({ { 2 /*t2*/, 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0 /*2nd slot of the heap*/ },});
+	//rsc.AddHeapRangesParameter({ { 2 /*t2*/, 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0 /*2nd slot of the heap*/ },});
 
 	return rsc.Generate(m_device.Get(), true);
 }
@@ -109,7 +109,7 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateMissSignature() {
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateGlobalSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
 	// CB indices
-	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, 0, 1, 2);
+	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, 0, 1, NUM_HEAP_INDEXES);
 	return rsc.Generate(m_device.Get(), false);
 }
 
@@ -252,7 +252,6 @@ void D3D12HelloTriangle::CreateShaderBindingTable() {
 		// Even though we will not use heap Pointer for this sahder function, it is passed, as it is specified in RS
 		// We can also just ignore it, but then it make things not clear
 		m_sbtHelper.AddHitGroup(L"HitGroup", { 
-			(void*)(m_perInstanceConstantBuffers[i]->GetGPUVirtualAddress()),
 			// for now we just hardcode these values. I do not know if we actually will need to pass Vertex and Index data, but useful to know, how to do it
 			(void*)(m_modelVertexAndNum[i].first->GetGPUVirtualAddress()),
 			(void*)(m_modelIndexAndNum[i].first->GetGPUVirtualAddress()),
@@ -262,13 +261,13 @@ void D3D12HelloTriangle::CreateShaderBindingTable() {
 	}
 	//  !!!!!!ALL DATA FOR NOW IS JUST A FILLER FOR THE EXAMPLE OF USE
 	m_sbtHelper.AddHitGroup(L"PlaneHitGroup",
-		{(void*)(m_perInstanceConstantBuffers[0]->GetGPUVirtualAddress()),
+		{
 		(void*)(m_modelVertexAndNum[0].first->GetGPUVirtualAddress()),
 			(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
 		heapPointer });
 	m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
 	m_sbtHelper.AddHitGroup(L"HitGroup", { 
-		(void*)(m_perInstanceConstantBuffers[3]->GetGPUVirtualAddress()),
+		
 		(void*)(m_modelVBVs[0].BufferLocation),
 			(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
 		heapPointer});
@@ -431,6 +430,9 @@ void D3D12HelloTriangle::LoadAssets()
 void D3D12HelloTriangle::OnUpdate()
 {
 	UpdateCameraBuffer();
+	m_HeapIndexes.TlasIndex = m_TlasHeapIndex;
+	m_HeapIndexes.camIndex = m_camHeapIndex;
+	m_HeapIndexes.instanceDataIndex = m_instanceDataHeapIndex;
 	// ANIMATE 
 	m_time++;
 	m_instances[0].second = XMMatrixScaling(0.01f, 0.01f, 0.01f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.1f * cosf(m_time / 20.f), 1.f);
@@ -527,10 +529,8 @@ void D3D12HelloTriangle::PopulateCommandList()
 	// Bind the raytracing pipeline
 	m_commandList->SetPipelineState1(m_rtStateObject.Get());
 
-	HeapOffsets offsets;
-	offsets.TlasIndex = m_TlasHeapIndex;
-	offsets.camIndex = m_camHeapIndex;
-	m_commandList->SetComputeRoot32BitConstants(0, 2, reinterpret_cast<void*>(&offsets), 0);
+	// Bindless indexes
+	m_commandList->SetComputeRoot32BitConstants(0, NUM_HEAP_INDEXES, reinterpret_cast<void*>(&m_HeapIndexes), 0);
 	// ----------DRAWING ------------------------------------------
 	// Dispatch the rays and write to the raytracing output
 	m_commandList->DispatchRays(&desc);
@@ -773,8 +773,18 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 int i = 0; 
 	 for (auto& cb : m_perInstanceConstantBuffers) 
 	 { 
-		 const uint32_t bufferSize = sizeof(XMVECTOR) * 3; 
-		 cb = nv_helpers_dx12::CreateBuffer(m_device.Get(), bufferSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps); 
+		 const uint32_t bufferSize = sizeof(XMVECTOR) * 3;
+		cb = nv_helpers_dx12::CreateBuffer(m_device.Get(), ROUND_UP(bufferSize,
+			 D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+		 if (i == 0) {
+			 m_instanceDataHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), cb.Get(), cb->GetGPUVirtualAddress(),
+				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::CBV);
+		 }
+		 else {
+			 nv_helpers_dx12::CreateBufferView(m_device.Get(), cb.Get(), cb->GetGPUVirtualAddress(),
+				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::CBV);
+		 }
+		
 		 uint8_t* pData; 
 		 ThrowIfFailed(cb->Map(0, nullptr, (void**)&pData)); 
 		 memcpy(pData, &bufferData[i * 3], bufferSize); 
@@ -868,106 +878,4 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 m_modelIBVs.back().SizeInBytes = indexDataSize;
 		 }
 	 }
- }
- void D3D12HelloTriangle::LoadModel2(const std::string& name)
- {
-	 tinygltf::TinyGLTF context;
-	 std::string error;
-	 std::string warning;
-	 if (!context.LoadASCIIFromFile(&m_TestModel2, &error, &warning, name)) {
-		 if (!error.empty()) {
-			 printf("ERROR!\n");
-		 }
-		 if (!warning.empty()) {
-			 printf("WARNING!\n");
-		 }
-		 printf("Couldn't find file. (%s)", name.c_str());
-	 }
-	 else {
-		 printf("SUCCESS!\n");
-	 }
-
-	 ComPtr<ID3D12Resource> newVBuffer;
-	 m_modelVertexAndNum2 = { newVBuffer, 0 };
-	 m_modelVBV2 = D3D12_VERTEX_BUFFER_VIEW();
-
-
-	 ComPtr<ID3D12Resource> newIBuffer;
-	 m_modelIBV2 = D3D12_INDEX_BUFFER_VIEW();
-	 m_modelIndexAndNum2 = { newIBuffer, 0 };
-
-	 std::vector<float> allVertexData = {};
-	 std::vector<UINT> allIndexData = {};
-
-	 UINT allVertexDataSize = 0;
-	 UINT allIndexDataSize = 0;
-	 for (auto& mesh : m_TestModel2.meshes) {
-		 for (auto& prim : mesh.primitives) {
-
-				 const tinygltf::Accessor& vertexAccessor = m_TestModel2.accessors[prim.attributes.at("POSITION")];
-				 const tinygltf::Accessor& indexAccessor = m_TestModel2.accessors[prim.indices];
-
-				 const tinygltf::BufferView& vertexBufferView = m_TestModel2.bufferViews[vertexAccessor.bufferView];
-				 const tinygltf::BufferView& indexBufferView = m_TestModel2.bufferViews[indexAccessor.bufferView];
-
-				 // Calculate the size of the vertex and index data.
-				 UINT vertexDataSize = vertexAccessor.count * vertexAccessor.ByteStride(vertexBufferView);
-				 UINT indexDataSize = indexAccessor.count * indexAccessor.ByteStride(indexBufferView);
-				 
-
-		 //vertexDataSize = static_cast<UINT>(vertexAccessor.count * sizeof(Vertex));
-		 //indexDataSize = static_cast<UINT>(indexAccessor.count * sizeof(UINT));
-				 
-
-				 float* vertexData = reinterpret_cast<float*>(&m_TestModel2.buffers[vertexBufferView.buffer].data[vertexBufferView.byteOffset + vertexAccessor.byteOffset]);
-				 //MAKE SIZE CHECKING FOR DATA TYPE
-				 UINT* indexData = reinterpret_cast<UINT*>(&m_TestModel2.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-
-				 
-				 for (int i = 0; i < vertexAccessor.count; i++) {
-					 allVertexData.push_back(vertexData[i]);
-				 }
-				 for (int i = 0; i < indexAccessor.count; i++) {
-					 allIndexData.push_back(indexData[i] + m_modelVertexAndNum2.second);
-				 }
-
-				 m_modelVertexAndNum2.second += vertexAccessor.count;
-				 m_modelIndexAndNum2.second += indexAccessor.count;
-				 allVertexDataSize += vertexDataSize;
-				 allIndexDataSize += indexDataSize;
-			 
-		 }
-	 }
-
-	 ThrowIfFailed(m_device->CreateCommittedResource(
-		 &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-		 D3D12_HEAP_FLAG_NONE,
-		 &CD3DX12_RESOURCE_DESC::Buffer(allVertexDataSize),
-		 D3D12_RESOURCE_STATE_GENERIC_READ,
-		 nullptr,
-		 IID_PPV_ARGS(&m_modelVertexAndNum2.first)));
-	 // Copy the triangle data to the vertex buffer.
-	 UINT8* pVertexDataBegin;
-	 CD3DX12_RANGE readRange(0, 0);		// We do not intend to read from this resource on the CPU.
-	 ThrowIfFailed(m_modelVertexAndNum2.first->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-	 memcpy(pVertexDataBegin, &allVertexData[0], allVertexDataSize);
-	 m_modelVertexAndNum2.first->Unmap(0, nullptr);
-	 // Initialize the vertex buffer view.
-	 m_modelVBV2.BufferLocation = m_modelVertexAndNum2.first->GetGPUVirtualAddress();
-	 m_modelVBV2.StrideInBytes = sizeof(Vertex);
-	 m_modelVBV2.SizeInBytes = allVertexDataSize;
-
-	 // Indices
-	 ThrowIfFailed(m_device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-		 D3D12_HEAP_FLAG_NONE, &CD3DX12_RESOURCE_DESC::Buffer(allIndexDataSize),
-		 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_modelIndexAndNum2.first)));
-	 // Copy the triangle data to the index buffer.
-	 UINT8* pIndexDataBegin;
-	 ThrowIfFailed(m_modelIndexAndNum2.first->Map(0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin)));
-	 memcpy(pIndexDataBegin, &allIndexData[0], allIndexDataSize);
-	 m_modelIndexAndNum2.first->Unmap(0, nullptr);
-	 // Initialize the index buffer view.
-	 m_modelIBV2.BufferLocation = m_modelIndexAndNum2.first->GetGPUVirtualAddress();
-	 m_modelIBV2.Format = DXGI_FORMAT_R32_UINT;
-	 m_modelIBV2.SizeInBytes = allIndexDataSize;
  }
