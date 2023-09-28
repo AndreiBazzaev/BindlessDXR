@@ -420,8 +420,10 @@ void D3D12HelloTriangle::LoadAssets()
 {
 
 	//LoadModel("Assets/car/scene.gltf"); 
-	LoadModel("Assets/car/scene.gltf");
-	//LoadModel("Assets/cars2/scene.gltf");
+	//LoadModel("Assets/car/scene.gltf");
+	//LoadModelRecursive("Assets/car/scene.gltf");
+	//LoadModelRecursive("Assets/cars2/scene.gltf");
+	LoadModelRecursive("Assets/Sponza/Sponza.gltf");
 	//LoadModel("Assets/Cube/Cube.gltf");
 	// Wait for the command list to execute; we are reusing the same command 
 	// list in our main loop but for now, we just want to wait for setup to 
@@ -441,12 +443,12 @@ void D3D12HelloTriangle::OnUpdate()
 	m_HeapIndexes.modelVertexDataIndex = m_modelVertexDataHeapIndex;
 	// ANIMATE 
 	m_time++;
-	m_instances[0].second = XMMatrixScaling(0.01f, 0.01f, 0.01f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.1f * cosf(m_time / 20.f), 1.f);
-	m_instances[1].second = XMMatrixScaling(0.003f, 0.003f, 0.003f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
-	m_instances[2].second = XMMatrixScaling(0.007f, 0.007f, 0.007f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f), 0.f);
+	m_instances[0].second = XMMatrixScaling(0.0003f, 0.0003f, 0.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), 1.f);
+	m_instances[1].second = XMMatrixScaling(0.0001f, 0.0001f, 0.0001f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
+	m_instances[2].second = XMMatrixScaling(0.0005f, 0.0005f, 0.0005f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f), 0.f);
 
-	m_instances[3].second = XMMatrixScaling(0.05f, 0.002f, 0.05f) * XMMatrixTranslation(0.f, - 1.f, 0.f);
-	m_instances[4].second = XMMatrixScaling(0.01f, 0.01f, 0.01f);
+	m_instances[3].second = XMMatrixScaling(0.003f, 0.00001f, 0.003f) * XMMatrixTranslation(0.f, - 1.f, 0.f);
+	m_instances[4].second = XMMatrixScaling(0.0006f, 0.0006f, 0.0006f);
 }
 
 // Render the scene.
@@ -592,15 +594,25 @@ void D3D12HelloTriangle::WaitForPreviousFrame()
 // buffers, and building the actual AS
 D3D12HelloTriangle::AccelerationStructureBuffers
 D3D12HelloTriangle::CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
-										std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers) {
+										std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers,
+										std::vector<ComPtr<ID3D12Resource>> vTransformBuffers) {
 
 	nv_helpers_dx12::BottomLevelASGenerator bottomLevelAS; 
 	// Adding all vertex buffers and not transforming their position for now
 	for (size_t i = 0; i < vVertexBuffers.size(); i++) {
-		if (i < vIndexBuffers.size() && vIndexBuffers[i].second > 0)
-			bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0, vVertexBuffers[i].second, sizeof(Vertex), vIndexBuffers[i].first.Get(), 0, vIndexBuffers[i].second, nullptr, 0, true);
-		else
-			bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0, vVertexBuffers[i].second, sizeof(Vertex), 0, 0);
+		if (vTransformBuffers.size() == 1000) {
+			if (i < vIndexBuffers.size() && vIndexBuffers[i].second > 0)
+				bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0, vVertexBuffers[i].second, sizeof(Vertex), vIndexBuffers[i].first.Get(), 0, vIndexBuffers[i].second, vTransformBuffers[i].Get(), 0, true);
+			else
+				bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0, vVertexBuffers[i].second, sizeof(Vertex), 0, 0, 0, vTransformBuffers[i].Get(), 0, true);
+		}
+		else {
+			if (i < vIndexBuffers.size() && vIndexBuffers[i].second > 0)
+				bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0, vVertexBuffers[i].second, sizeof(Vertex), vIndexBuffers[i].first.Get(), 0, vIndexBuffers[i].second, nullptr, 0, true);
+			else
+				bottomLevelAS.AddVertexBuffer(vVertexBuffers[i].first.Get(), 0, vVertexBuffers[i].second, sizeof(Vertex), 0, 0, 0);
+
+		}
 	}
 	// The AS build requires some scratch space to store temporary information. 
 	// The amount of scratch memory is dependent on the scene complexity. 
@@ -905,4 +917,205 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 WaitForSingleObject(m_fenceEvent, INFINITE);
 	 // Once the command list is finished executing, reset it to be reused for rendering 
 	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+ }
+ void D3D12HelloTriangle::LoadModelRecursive(const std::string& name)
+ {
+	 tinygltf::TinyGLTF context;
+	 std::string error;
+	 std::string warning;
+	 tinygltf::Model m_TestModel;
+	 if (!context.LoadASCIIFromFile(&m_TestModel, &error, &warning, name)) {
+		 if (!error.empty()) {
+			 printf("ERROR!\n");
+		 }
+		 if (!warning.empty()) {
+			 printf("WARNING!\n");
+		 }
+		 printf("Couldn't find file. (%s)", name.c_str());
+	 }
+	 else {
+		 printf("SUCCESS!\n");
+	 }
+	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> modelVertexAndNum;
+	 std::vector <std::pair<ComPtr<ID3D12Resource>, uint32_t>> modelIndexAndNum;
+	 std::vector <ComPtr<ID3D12Resource >> transforms;
+
+	 auto& scene = m_TestModel.scenes[m_TestModel.defaultScene];
+	 for (size_t i = 0; i < scene.nodes.size(); i++) {
+		 BuildModelRecursive(m_TestModel, scene.nodes[i], XMMatrixIdentity(), transforms, modelVertexAndNum, modelIndexAndNum);
+	 }
+
+
+	 //WaitForPreviousFrame();
+	 AccelerationStructureBuffers AS = CreateBottomLevelAS(modelVertexAndNum, modelIndexAndNum, transforms);
+	 m_modelBLASBuffer = AS.pResult;
+	 m_commandList->Close();
+	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
+	 m_fenceValue++;
+	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
+	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
+	 WaitForSingleObject(m_fenceEvent, INFINITE);
+	 // Once the command list is finished executing, reset it to be reused for rendering 
+	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+ }
+ 
+ void D3D12HelloTriangle::BuildModelRecursive(tinygltf::Model& model, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
+	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum) {
+	 HRESULT hr = S_OK;
+	 // get the needed node
+	 auto& glTFNode = model.nodes[nodeIndex];
+	 XMMATRIX modelSpaceTrans = parentMat;
+	 bool hasMesh = glTFNode.mesh >= 0;
+	 ComPtr<ID3D12Resource> transBuffer;
+	 // Build Matrix
+	 {
+		 // Build a constant buffer for node transform matrix
+		 transBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(XMMATRIX), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+
+		 // if GLTF node has a pre-specified matrix, use it
+		 if (glTFNode.matrix.size() == 16) {
+			 // transform GLTF vector with 16 values to GLM mat4
+			 XMMATRIX nodeMat = nv_helpers_dx12::ConvertGLTFMatrixToXMMATRIX(&glTFNode.matrix[0]);
+			 // apply parent-child matrix transform
+			 modelSpaceTrans =  parentMat * nodeMat;
+		 }
+		 else {
+			 XMMATRIX trMat = XMMatrixIdentity();
+			 XMMATRIX rotMat = XMMatrixIdentity();
+			 XMMATRIX scMat = XMMatrixIdentity();
+			 // There is no madel matrix
+			 // Assume Trans x Rotate x Scale order
+			 if (glTFNode.translation.size() == 3) {
+				 trMat = XMMatrixTranslation(glTFNode.translation[0], glTFNode.translation[1], glTFNode.translation[2]);
+			 }
+			 if (glTFNode.rotation.size() == 4) {
+				 DirectX::XMVECTOR quaternion = DirectX::XMVectorSet(glTFNode.rotation[0], glTFNode.rotation[1], glTFNode.rotation[2], glTFNode.rotation[3]);
+				 rotMat = DirectX::XMMatrixRotationQuaternion(DirectX::XMQuaternionNormalize(quaternion));
+			 }
+			 if (glTFNode.scale.size() == 3) {
+				 scMat = XMMatrixScaling(glTFNode.scale[0], glTFNode.scale[1], glTFNode.scale[2]);
+			 }
+			 modelSpaceTrans = scMat * rotMat * trMat * parentMat;
+		 }
+		 uint8_t* pData;
+		 ThrowIfFailed(transBuffer->Map(0, nullptr, (void**)&pData));
+		 memcpy(pData, &modelSpaceTrans, sizeof(XMMATRIX));
+		 transBuffer->Unmap(0, nullptr);
+	 }
+	// Build Primitive data
+	 {
+		 if (hasMesh) {
+			 auto& mesh = model.meshes[glTFNode.mesh];
+			 for (auto& prim : mesh.primitives) {
+
+				 transforms.push_back(transBuffer);
+
+				 ComPtr<ID3D12Resource> newVBuffer;
+				 modelVertexAndNum.push_back({ newVBuffer, 0 });
+
+				 ComPtr<ID3D12Resource> newIBuffer;
+				 modelIndexAndNum.push_back({ newIBuffer, 0 });
+
+				 const tinygltf::Accessor& vertexAccessor = model.accessors[prim.attributes.at("POSITION")];
+				 const tinygltf::Accessor& indexAccessor = model.accessors[prim.indices];
+
+				 const tinygltf::BufferView& vertexBufferView = model.bufferViews[vertexAccessor.bufferView];
+				 const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+
+
+				 UINT vertexDataSize = vertexAccessor.count * vertexAccessor.ByteStride(vertexBufferView);
+				 UINT indexDataSize = indexAccessor.count * sizeof(UINT);
+
+				 const float* vertexData = reinterpret_cast<const float*>(&model.buffers[vertexBufferView.buffer].data[vertexBufferView.byteOffset + vertexAccessor.byteOffset]);
+
+				 std::vector<UINT> indexData;
+				 switch (indexAccessor.componentType) {
+				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					 {
+						 const UINT8* indexLoadData8 = reinterpret_cast<const UINT8*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+						 for (int i = 0; i < indexAccessor.count; i++) {
+							 UINT id = indexLoadData8[i];
+							 indexData.push_back(id);
+						 }
+					 }
+					 break;
+				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					 {
+						 const UINT16* indexLoadData16 = reinterpret_cast<const UINT16*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+						 for (int i = 0; i < indexAccessor.count; i++) {
+							 UINT id = indexLoadData16[i];
+							 indexData.push_back(id);
+						 }
+					 }
+					 break;
+				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					 {
+						 const UINT32* indexLoadData32 = reinterpret_cast<UINT32*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+						 for (int i = 0; i < indexAccessor.count; i++) {
+							 UINT id = indexLoadData32[i];
+							 indexData.push_back(id);
+						 }
+					 }
+					 break;
+				 }
+				 modelVertexAndNum.back().second = vertexAccessor.count;
+				 modelIndexAndNum.back().second = indexAccessor.count;
+
+				 modelVertexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), vertexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+				 UINT8* pVertexDataBegin;
+				 CD3DX12_RANGE readRange(0, 0);
+				 ThrowIfFailed(modelVertexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+				 memcpy(pVertexDataBegin, vertexData, vertexDataSize);
+				 modelVertexAndNum.back().first->Unmap(0, nullptr);
+
+
+				 modelIndexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), indexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+				 // Copy the triangle data to the index buffer.
+				 UINT8* pIndexDataBegin;
+				 ThrowIfFailed(modelIndexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin)));
+				 memcpy(pIndexDataBegin, &indexData[0], indexDataSize);
+				 modelIndexAndNum.back().first->Unmap(0, nullptr);
+
+				 // Normals 
+
+				 ComPtr<ID3D12Resource> newNormalBuffer;
+				 const tinygltf::Accessor& normalAccessor = model.accessors[prim.attributes.at("NORMAL")];
+				 const tinygltf::BufferView& normalBufferView = model.bufferViews[normalAccessor.bufferView];
+				 UINT normalDataSize = normalAccessor.count * normalAccessor.ByteStride(normalBufferView);
+				 const float* normalData = reinterpret_cast<const float*>(&model.buffers[normalBufferView.buffer].data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
+
+				 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+				 UINT8* pNormalataBegin;
+				 ThrowIfFailed(newNormalBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNormalataBegin)));
+				 memcpy(pNormalataBegin, normalData, normalDataSize);
+				 newNormalBuffer->Unmap(0, nullptr);
+
+				 // Bindless
+				 if (modelVertexAndNum.size() == 1) {
+					 // Positions
+					 m_modelVertexDataHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), modelVertexAndNum.back().first.Get(), modelVertexAndNum.back().first->GetGPUVirtualAddress(),
+						 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
+				 }
+				 else {
+					 // Positions
+					 nv_helpers_dx12::CreateBufferView(m_device.Get(), modelVertexAndNum.back().first.Get(), modelVertexAndNum.back().first->GetGPUVirtualAddress(),
+						 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
+				 }
+				 // Other vertex data
+					 // Normals
+				 nv_helpers_dx12::CreateBufferView(m_device.Get(), newNormalBuffer.Get(), newNormalBuffer->GetGPUVirtualAddress(),
+					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Normal));
+				 //----------------Indices
+				 nv_helpers_dx12::CreateBufferView(m_device.Get(), modelIndexAndNum.back().first.Get(), modelIndexAndNum.back().first->GetGPUVirtualAddress(),
+					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(UINT));
+			 }
+		 }
+		
+	 }
+
+	 // continue with node's children (we pass paren's model matrix to get the correct transform for children)
+	 for (size_t i = 0; i < glTFNode.children.size(); i++) {
+		 BuildModelRecursive(model, glTFNode.children[i], modelSpaceTrans, transforms, modelVertexAndNum, modelIndexAndNum);
+	 }
  }

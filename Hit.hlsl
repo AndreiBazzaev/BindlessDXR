@@ -49,11 +49,18 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 
 	float3 hitColor = float3(0.f, 1.f, 0.f);
 
+	// Model space normals
 	hitColor = (BTriNormal[indices[vertId + 0]].normal + 1.f) * 0.5 * barycentrics.x +
 		(BTriNormal[indices[vertId + 1]].normal + 1.f) * 0.5 * barycentrics.y +
 		(BTriNormal[indices[vertId + 2]].normal + 1.f) * 0.5 * barycentrics.z;
+	// World space normals
+	/*float3x4 objectToWorldMatrix = ObjectToWorld3x4(); 
+	float3x3 upperLeft3x3 = (float3x3)objectToWorldMatrix; 
+	hitColor = (normalize(mul(BTriNormal[indices[vertId + 0]].normal, upperLeft3x3)) + 1.f) * 0.5 * barycentrics.x +
+		(normalize(mul(BTriNormal[indices[vertId + 1]].normal, upperLeft3x3)) + 1.f) * 0.5 * barycentrics.y +
+		(normalize(mul(BTriNormal[indices[vertId + 2]].normal, upperLeft3x3)) + 1.f) * 0.5 * barycentrics.z;*/
 
-	
+
 	//hitColor =BTriNormal[indices[vertId + 0]].normal
 	//hitColor = colBuffer.col1 * float(GeometryIndex() % 4) / 4.f;
 	

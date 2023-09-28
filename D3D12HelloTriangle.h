@@ -115,7 +115,8 @@ private:
 	/// \return AccelerationStructureBuffers for TLAS
 	AccelerationStructureBuffers
 		CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
-							std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers = {});
+							std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers = {},
+	std::vector<ComPtr<ID3D12Resource>> vTransformBuffers = {});
 	/// Create the main acceleration structure that holds all instances of the scene
 	/// \param instances : pair of BLAS and transform
 	void CreateTopLevelAS(const std::vector<std::pair<ComPtr<ID3D12Resource>, DirectX::XMMATRIX>>& instances, bool updateOnly = false);
@@ -182,6 +183,9 @@ private:
 	uint32_t m_time = 0;
 	// MODEL LOADING
 	void LoadModel(const std::string& name);
+	void LoadModelRecursive(const std::string& name);
+	void BuildModelRecursive(tinygltf::Model& model, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
+		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum);
 	// Bindless models
 	ComPtr<ID3D12Resource> m_modelBLASBuffer; 
 	uint32_t m_modelVertexDataHeapIndex;

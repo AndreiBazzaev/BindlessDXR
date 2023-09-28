@@ -185,5 +185,10 @@ ID3D12DescriptorHeap* CreateDescriptorHeap(ID3D12Device* device, uint32_t count,
   ThrowIfFailed(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&pHeap)));
   return pHeap;
 }
+DirectX::XMMATRIX ConvertGLTFMatrixToXMMATRIX(double* gltfMatrix) { 
+    return XMMatrixTranspose(DirectX::XMMATRIX(float(gltfMatrix[0]), float(gltfMatrix[1]), float(gltfMatrix[2]), float(gltfMatrix[3]),
+                             float(gltfMatrix[4]), float(gltfMatrix[5]), float(gltfMatrix[6]), float(gltfMatrix[7]),
+                             float(gltfMatrix[8]), float(gltfMatrix[9]), float(gltfMatrix[10]), float(gltfMatrix[11]),
+                             float(gltfMatrix[12]), float(gltfMatrix[13]), float(gltfMatrix[14]), float(gltfMatrix[15]))); }
 
 } // namespace nv_helpers_dx12
