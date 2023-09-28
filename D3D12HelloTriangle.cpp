@@ -23,7 +23,7 @@
 #include "Windowsx.h"
 #include <iostream>
 #define NumRayTypes 2
-#define NUM_HEAP_INDEXES 3
+#define NUM_HEAP_INDEXES 5
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
@@ -45,12 +45,11 @@ void D3D12HelloTriangle::CheckRaytracingSupport() {
 void D3D12HelloTriangle::OnInit()
 {
 	LoadPipeline();
-	LoadAssets();
-
 	// #RTX---------------------------------------------------------------
 	// Check the raytracing capabilities of the device 
 	CheckRaytracingSupport();
 	CreateShaderResourceHeap();
+	LoadAssets();
 	// Setup the acceleration structures (AS) for raytracing. When setting up 
 	// geometry, each bottom-level AS has its own transform matrix. 
 	CreateAccelerationStructures();
@@ -65,6 +64,7 @@ void D3D12HelloTriangle::OnInit()
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	CreateCameraBuffer();
 	CreatePerInstanceConstantBuffers();
+	
 	// Create the buffer containing the raytracing result (always output in a
 	// UAV), and create the heap referencing the resources used by the raytracing,
 	// such as the acceleration structure
@@ -77,13 +77,13 @@ void D3D12HelloTriangle::OnInit()
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateRayGenSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc; 
 
-	rsc.AddHeapRangesParameter(
-		{ {0 /*u0*/, 1 /* num desc */, 0 /*register space*/,
-		D3D12_DESCRIPTOR_RANGE_TYPE_UAV /* UAV output*/,
-		1 /*heap slot where the UAV is defined*/}, 
-		//{0 /*t0*/, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_SRV /*TLAS*/, 0},
-		//{0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_CBV /*Cam*/ ,2} 
-		});
+	//rsc.AddHeapRangesParameter(
+	//	{ {0 /*u0*/, 1 /* num desc */, 0 /*register space*/,
+	//	D3D12_DESCRIPTOR_RANGE_TYPE_UAV /* UAV output*/,
+	//	1 /*heap slot where the UAV is defined*/}, 
+	//	//{0 /*t0*/, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_SRV /*TLAS*/, 0},
+	//	//{0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_CBV /*Cam*/ ,2} 
+	//	});
 
 	//rsc.AddHeapRangesParameter({ {0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_UAV,0},{0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1} });
 	
@@ -93,9 +93,9 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateRayGenSignature() {
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateHitSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
 	// vertices data
-	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0); 
+	//rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0); 
 	// indices
-	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 1);
+	//rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 1);
 	// Scene BVH
 	//rsc.AddHeapRangesParameter({ { 2 /*t2*/, 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0 /*2nd slot of the heap*/ },});
 
@@ -242,7 +242,7 @@ void D3D12HelloTriangle::CreateShaderBindingTable() {
 	// struct is a UINT64, which then has to be reinterpreted as a pointer.
 	auto heapPointer = reinterpret_cast<UINT64*>(srvUavHeapHandle.ptr);
 	// The ray generation only uses heap data
-	m_sbtHelper.AddRayGenerationProgram(L"RayGen", { heapPointer });
+	m_sbtHelper.AddRayGenerationProgram(L"RayGen", {  });
 	// The miss and hit shaders do not access any external resources: instead they
 	// communicate their results through the ray payload
 	m_sbtHelper.AddMissProgram(L"Miss", {});
@@ -253,24 +253,27 @@ void D3D12HelloTriangle::CreateShaderBindingTable() {
 		// We can also just ignore it, but then it make things not clear
 		m_sbtHelper.AddHitGroup(L"HitGroup", { 
 			// for now we just hardcode these values. I do not know if we actually will need to pass Vertex and Index data, but useful to know, how to do it
-			(void*)(m_modelVertexAndNum[i].first->GetGPUVirtualAddress()),
-			(void*)(m_modelIndexAndNum[i].first->GetGPUVirtualAddress()),
-			heapPointer });
+			//(void*)(m_modelVertexAndNum[i].first->GetGPUVirtualAddress()),
+			//(void*)(m_modelIndexAndNum[i].first->GetGPUVirtualAddress()),
+			//heapPointer 
+			});
 
 		m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
 	}
 	//  !!!!!!ALL DATA FOR NOW IS JUST A FILLER FOR THE EXAMPLE OF USE
 	m_sbtHelper.AddHitGroup(L"PlaneHitGroup",
 		{
-		(void*)(m_modelVertexAndNum[0].first->GetGPUVirtualAddress()),
-			(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
-		heapPointer });
+		//(void*)(m_modelVertexAndNum[0].first->GetGPUVirtualAddress()),
+		//	(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
+		//heapPointer 
+		});
 	m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
 	m_sbtHelper.AddHitGroup(L"HitGroup", { 
 		
-		(void*)(m_modelVBVs[0].BufferLocation),
-			(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
-		heapPointer});
+		//(void*)(m_modelVBVs[0].BufferLocation),
+		//	(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
+		//heapPointer
+		});
 	m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
 
 
@@ -423,16 +426,19 @@ void D3D12HelloTriangle::LoadAssets()
 	// Wait for the command list to execute; we are reusing the same command 
 	// list in our main loop but for now, we just want to wait for setup to 
 	// complete before continuing.
-	WaitForPreviousFrame();
+	//WaitForPreviousFrame();
 }
 
 // Update frame-based values.
 void D3D12HelloTriangle::OnUpdate()
 {
 	UpdateCameraBuffer();
+	m_HeapIndexes.RTOutputHeapIndex = m_RTOutputHeapIndex;
 	m_HeapIndexes.TlasIndex = m_TlasHeapIndex;
 	m_HeapIndexes.camIndex = m_camHeapIndex;
 	m_HeapIndexes.instanceDataIndex = m_instanceDataHeapIndex;
+
+	m_HeapIndexes.modelVertexDataIndex = m_modelVertexDataHeapIndex;
 	// ANIMATE 
 	m_time++;
 	m_instances[0].second = XMMatrixScaling(0.01f, 0.01f, 0.01f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.1f * cosf(m_time / 20.f), 1.f);
@@ -660,11 +666,10 @@ void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::pair<ComPtr<ID3
 // structure required to raytrace the scene
 void D3D12HelloTriangle::CreateAccelerationStructures() { 
 	
-	// BLAS for model
-	AccelerationStructureBuffers modelBottomLevelBuffers = CreateBottomLevelAS(m_modelVertexAndNum, m_modelIndexAndNum);
+	
 	//AccelerationStructureBuffers modelBottomLevelBuffers = CreateBottomLevelAS({ m_modelVertexAndNum2 }, { m_modelIndexAndNum2 });
-	m_instances = { {modelBottomLevelBuffers.pResult, XMMatrixIdentity()}, {modelBottomLevelBuffers.pResult, XMMatrixTranslation(-.6f, 0, 1.f)}, {modelBottomLevelBuffers.pResult, XMMatrixTranslation(.6f, 0, -1.f)},
-		{modelBottomLevelBuffers.pResult, XMMatrixTranslation(0, 0, 0)}, {modelBottomLevelBuffers.pResult, XMMatrixIdentity()} };
+	m_instances = { {m_modelBLASBuffer, XMMatrixIdentity()}, {m_modelBLASBuffer, XMMatrixTranslation(-.6f, 0, 1.f)}, {m_modelBLASBuffer, XMMatrixTranslation(.6f, 0, -1.f)},
+		{m_modelBLASBuffer, XMMatrixTranslation(0, 0, 0)}, {m_modelBLASBuffer, XMMatrixIdentity()} };
 	CreateTopLevelAS(m_instances);
 	m_TlasHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), nullptr, m_topLevelASBuffers.pResult->GetGPUVirtualAddress(),
 		m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::AS);
@@ -678,9 +683,6 @@ void D3D12HelloTriangle::CreateAccelerationStructures() {
 	WaitForSingleObject(m_fenceEvent, INFINITE); 
 	// Once the command list is finished executing, reset it to be reused for rendering 
 	ThrowIfFailed( m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-	// Store the AS buffers. The rest of the buffers will be released once we exit the function 
-	m_bottomLevelAS = modelBottomLevelBuffers.pResult;
-
 }
 //-----------------------------------------------------------------------------
 // Camera----------------------------------------------------------------------
@@ -802,6 +804,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 tinygltf::TinyGLTF context;
 	 std::string error;
 	 std::string warning;
+	 tinygltf::Model m_TestModel;
 	 if (!context.LoadASCIIFromFile(&m_TestModel, &error, &warning, name)) {
 		 if (!error.empty()) {
 			 printf("ERROR!\n");
@@ -814,15 +817,15 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 else {
 		 printf("SUCCESS!\n");
 	 }
+	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> m_modelVertexAndNum;
+	 std::vector <std::pair<ComPtr<ID3D12Resource>, uint32_t>> m_modelIndexAndNum;
 	 for (auto& mesh : m_TestModel.meshes) {
 		 for (auto& prim : mesh.primitives) {
 			 ComPtr<ID3D12Resource> newVBuffer;
 			 m_modelVertexAndNum.push_back({ newVBuffer, 0 });
-			 m_modelVBVs.push_back(D3D12_VERTEX_BUFFER_VIEW());
 
 			 ComPtr<ID3D12Resource> newIBuffer;
 			 m_modelIndexAndNum.push_back({ newIBuffer, 0 });
-			 m_modelIBVs.push_back(D3D12_INDEX_BUFFER_VIEW());
 
 			 const tinygltf::Accessor& vertexAccessor = m_TestModel.accessors[prim.attributes.at("POSITION")];
 			 const tinygltf::Accessor& indexAccessor = m_TestModel.accessors[prim.indices];
@@ -830,52 +833,76 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 const tinygltf::BufferView& vertexBufferView = m_TestModel.bufferViews[vertexAccessor.bufferView];
 			 const tinygltf::BufferView& indexBufferView = m_TestModel.bufferViews[indexAccessor.bufferView];
 
-			 // Calculate the size of the vertex and index data.
+
 			 UINT vertexDataSize = vertexAccessor.count * vertexAccessor.ByteStride(vertexBufferView);
 			 UINT indexDataSize = indexAccessor.count * indexAccessor.ByteStride(indexBufferView);
-			 /*
-			 vertexDataSize = static_cast<UINT>(vertexAccessor.count * sizeof(Vertex));
-			 indexDataSize = static_cast<UINT>(indexAccessor.count * sizeof(UINT));
-			 */
 
 			 const float* vertexData = reinterpret_cast<const float*>(&m_TestModel.buffers[vertexBufferView.buffer].data[vertexBufferView.byteOffset + vertexAccessor.byteOffset]);
-			 //MAKE SIZE CHECKING FOR DATA TYPE
 			 const UINT* indexData = reinterpret_cast<const UINT*>(&m_TestModel.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
 
 			 
 			 m_modelVertexAndNum.back().second = vertexAccessor.count;
 			 m_modelIndexAndNum.back().second = indexAccessor.count;
-			 ThrowIfFailed(m_device->CreateCommittedResource(
-				 &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-				 D3D12_HEAP_FLAG_NONE,
-				 &CD3DX12_RESOURCE_DESC::Buffer(vertexDataSize),
-				 D3D12_RESOURCE_STATE_GENERIC_READ,
-				 nullptr,
-				 IID_PPV_ARGS(&m_modelVertexAndNum.back().first)));
-			 // Copy the triangle data to the vertex buffer.
+
+			 m_modelVertexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), vertexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
 			 UINT8* pVertexDataBegin;
-			 CD3DX12_RANGE readRange(0, 0);		// We do not intend to read from this resource on the CPU.
+			 CD3DX12_RANGE readRange(0, 0);
 			 ThrowIfFailed(m_modelVertexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
 			 memcpy(pVertexDataBegin, vertexData, vertexDataSize);
 			 m_modelVertexAndNum.back().first->Unmap(0, nullptr);
-			 // Initialize the vertex buffer view.
-			 m_modelVBVs.back().BufferLocation = m_modelVertexAndNum.back().first->GetGPUVirtualAddress();
-			 m_modelVBVs.back().StrideInBytes = sizeof(Vertex);
-			 m_modelVBVs.back().SizeInBytes = vertexDataSize;
 
-			 // Indices
-			 ThrowIfFailed(m_device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-				 D3D12_HEAP_FLAG_NONE, &CD3DX12_RESOURCE_DESC::Buffer(indexDataSize),
-				 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_modelIndexAndNum.back().first)));
+
+			 m_modelIndexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), indexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
 			 // Copy the triangle data to the index buffer.
 			 UINT8* pIndexDataBegin;
 			 ThrowIfFailed(m_modelIndexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin)));
 			 memcpy(pIndexDataBegin, indexData, indexDataSize);
 			 m_modelIndexAndNum.back().first->Unmap(0, nullptr);
-			 // Initialize the index buffer view.
-			 m_modelIBVs.back().BufferLocation = m_modelIndexAndNum.back().first->GetGPUVirtualAddress();
-			 m_modelIBVs.back().Format = DXGI_FORMAT_R32_UINT;
-			 m_modelIBVs.back().SizeInBytes = indexDataSize;
+
+			 // Normals 
+
+			 ComPtr<ID3D12Resource> newNormalBuffer;
+			 const tinygltf::Accessor& normalAccessor = m_TestModel.accessors[prim.attributes.at("NORMAL")];
+			 const tinygltf::BufferView& normalBufferView = m_TestModel.bufferViews[normalAccessor.bufferView];
+			 UINT normalDataSize = normalAccessor.count * normalAccessor.ByteStride(normalBufferView);
+			 const float* normalData = reinterpret_cast<const float*>(&m_TestModel.buffers[normalBufferView.buffer].data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
+			 
+			 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+			 UINT8* pNormalataBegin;
+			 ThrowIfFailed(newNormalBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNormalataBegin)));
+			 memcpy(pNormalataBegin, normalData, normalDataSize);
+			 newNormalBuffer->Unmap(0, nullptr);
+
+			 // Bindless
+			 if (m_modelVertexAndNum.size() == 1) {
+				 // Positions
+				 m_modelVertexDataHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), m_modelVertexAndNum.back().first.Get(), m_modelVertexAndNum.back().first->GetGPUVirtualAddress(),
+					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
+			 }
+			 else {
+				 // Positions
+				 nv_helpers_dx12::CreateBufferView(m_device.Get(), m_modelVertexAndNum.back().first.Get(), m_modelVertexAndNum.back().first->GetGPUVirtualAddress(),
+					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
+			 }
+			 // Other vertex data
+				 // Normals
+			 nv_helpers_dx12::CreateBufferView(m_device.Get(), newNormalBuffer.Get(), newNormalBuffer->GetGPUVirtualAddress(),
+				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Normal));
+			 //----------------Indices
+			 nv_helpers_dx12::CreateBufferView(m_device.Get(), m_modelIndexAndNum.back().first.Get(), m_modelIndexAndNum.back().first->GetGPUVirtualAddress(),
+				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(UINT));
 		 }
 	 }
+	 //WaitForPreviousFrame();
+	 AccelerationStructureBuffers AS = CreateBottomLevelAS(m_modelVertexAndNum, m_modelIndexAndNum);
+	 m_modelBLASBuffer = AS.pResult;
+	 m_commandList->Close();
+	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
+	 m_fenceValue++;
+	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
+	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
+	 WaitForSingleObject(m_fenceEvent, INFINITE);
+	 // Once the command list is finished executing, reset it to be reused for rendering 
+	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
  }

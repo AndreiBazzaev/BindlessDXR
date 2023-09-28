@@ -1,7 +1,7 @@
 #include "Common.hlsl"
 
 // Raytracing output texture, accessed as a UAV
-RWTexture2D< float4 > gOutput : register(u0);
+//RWTexture2D< float4 > gOutput : register(u0);
 struct CamStruct {
 	float4x4 view;
 	float4x4 projection;
@@ -38,6 +38,8 @@ void RayGen() {
 	//Bindless
 	ConstantBuffer<CamStruct> camBuffer = ResourceDescriptorHeap[renderResource.camIndex];
 	RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[renderResource.TlasIndex];
+	RWTexture2D<float4>  gOutput = ResourceDescriptorHeap[renderResource.RTOutputHeapIndex];
+
 	ray.Origin = mul(camBuffer.viewInv, float4(0, 0, 0, 1));
 	float4 target = mul(camBuffer.projectionInv, float4(d.x, -d.y, 1, 1));
 	ray.Direction = mul(camBuffer.viewInv, float4(target.xyz, 0));

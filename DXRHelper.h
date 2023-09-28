@@ -16,7 +16,7 @@
 namespace nv_helpers_dx12
 {
     enum BufferType {
-        CBV, SRV, UAV, AS
+        CBV, SRV_BUFFER, UAV, AS
 };
 //--------------------------------------------------------------------------------------------------
 //
@@ -47,7 +47,7 @@ inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
-inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type)
+inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type, UINT stride = 0)
 {
     switch (type) {
         case CBV: {
@@ -58,8 +58,16 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
             device->CreateConstantBufferView(&cbvDesc, handleRef);
             break;
         }
-        case SRV: {
-            assert("SRV VIEW NOT IMPLEMENTED!");
+        case SRV_BUFFER: {
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+            srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Buffer.NumElements = resource->GetDesc().Width / stride;
+            srvDesc.Buffer.FirstElement = 0;
+            srvDesc.Buffer.StructureByteStride = stride;
+            srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            device->CreateShaderResourceView(resource, &srvDesc, handleRef);
             break;
         }
         case UAV: {

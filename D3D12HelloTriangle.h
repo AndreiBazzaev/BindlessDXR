@@ -40,7 +40,10 @@ public:
 
 private:
 	static const UINT FrameCount = 2;
-
+	struct Normal
+	{
+		XMFLOAT3 dir;
+	};
 	struct Vertex
 	{
 		XMFLOAT3 position;
@@ -55,9 +58,11 @@ private:
 			:position(pos) {}
 	};
 	struct IndexesInHeap {
+		uint32_t RTOutputHeapIndex;
 		uint32_t TlasIndex;
 		uint32_t camIndex;
 		uint32_t instanceDataIndex;
+		uint32_t modelVertexDataIndex;
 	};
 	struct VertexM
 	{
@@ -99,7 +104,7 @@ private:
 		ComPtr<ID3D12Resource> pInstanceDesc; // Hold the matrices of the instances
 	};
 	// #RTX required setup for 1 BLAS with one object and TLAS which contains this one BLAS
-	ComPtr<ID3D12Resource> m_bottomLevelAS; // Storage for the bottom Level AS
+
 	nv_helpers_dx12::TopLevelASGenerator m_topLevelASGenerator; // Helper to create TLAS
 	AccelerationStructureBuffers m_topLevelASBuffers;
 	uint32_t m_TlasHeapIndex;
@@ -177,15 +182,10 @@ private:
 	uint32_t m_time = 0;
 	// MODEL LOADING
 	void LoadModel(const std::string& name);
-	tinygltf::Model m_TestModel;
+	// Bindless models
+	ComPtr<ID3D12Resource> m_modelBLASBuffer; 
+	uint32_t m_modelVertexDataHeapIndex;
 
-	std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> m_modelVertexAndNum;
-	std::vector <std::pair<ComPtr<ID3D12Resource>, uint32_t>> m_modelIndexAndNum;
-
-	std::vector < D3D12_VERTEX_BUFFER_VIEW> m_modelVBVs;
-	std::vector < D3D12_INDEX_BUFFER_VIEW> m_modelIBVs;
-	DXGI_FORMAT m_modelIndexFormat = DXGI_FORMAT_R32_UINT;
-	
 	// Bindless
 	uint32_t GetCBV_SRV_UAVDescriptorIndex(ID3D12Resource* resource, ID3D12DescriptorHeap* heap) const;
 	IndexesInHeap m_HeapIndexes;

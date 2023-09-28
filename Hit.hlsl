@@ -20,8 +20,12 @@ struct STriVertex
 {
 	float3 vertex;
 };
-StructuredBuffer<STriVertex> BTriVertex : register(t0);
-StructuredBuffer<int> indices: register(t1);
+struct STriNormal
+{
+	float3 normal;
+};
+//StructuredBuffer<STriVertex> BTriVertex : register(t0);
+//StructuredBuffer<int> indices: register(t1);
 //------------------------
 
 
@@ -35,10 +39,24 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 	uint vertId = 3 * PrimitiveIndex();
 	// Get colors from vertex data
 
+	StructuredBuffer<STriVertex> BTriVertex = ResourceDescriptorHeap[renderResource.modelVertexDataIndex + GeometryIndex() * 3];
+	StructuredBuffer<STriNormal> BTriNormal = ResourceDescriptorHeap[renderResource.modelVertexDataIndex + GeometryIndex() * 3 + 1];
+	StructuredBuffer<int> indices = ResourceDescriptorHeap[renderResource.modelVertexDataIndex + GeometryIndex() * 3 + 2];
+
+	
+
 	ConstantBuffer<ColorStruct> colBuffer = ResourceDescriptorHeap[renderResource.instanceDataIndex + InstanceID()];
 
 	float3 hitColor = float3(0.f, 1.f, 0.f);
-	hitColor = colBuffer.col1 * float(GeometryIndex() % 4) / 4.f;
+
+	hitColor = (BTriNormal[indices[vertId + 0]].normal + 1.f) * 0.5 * barycentrics.x +
+		(BTriNormal[indices[vertId + 1]].normal + 1.f) * 0.5 * barycentrics.y +
+		(BTriNormal[indices[vertId + 2]].normal + 1.f) * 0.5 * barycentrics.z;
+
+	
+	//hitColor =BTriNormal[indices[vertId + 0]].normal
+	//hitColor = colBuffer.col1 * float(GeometryIndex() % 4) / 4.f;
+	
 	//;
 	// REMINDER!!!: Please read up on Default Heap usage. An upload heap is used here for code simplicity and because there are very few verts
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());

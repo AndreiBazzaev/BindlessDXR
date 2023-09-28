@@ -17,8 +17,10 @@ struct Attributes
 
 // BINDLESS---------------
 struct HeapOffsets {
+	uint RTOutputHeapIndex;
 	uint TlasIndex;
 	uint camIndex;
 	uint instanceDataIndex;
+	uint modelVertexDataIndex;
 };
 ConstantBuffer<HeapOffsets> renderResource :register (b0, space1);
