@@ -90,7 +90,18 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
     heapIndex += 1;
     return heapIndex - 1;
 }
+inline void ChangeASResourceLoaction(ID3D12Device* device, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, ID3D12DescriptorHeap* heapPtr, uint32_t& heapIndex, BufferType type)
+{
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.RaytracingAccelerationStructure.Location = GpuAdress;
+        D3D12_CPU_DESCRIPTOR_HANDLE handle = heapPtr->GetCPUDescriptorHandleForHeapStart();
 
+        handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * heapIndex;
+        device->CreateShaderResourceView(nullptr, &srvDesc, handle);
+}
 
 // Specifies a heap used for uploading. This heap type has CPU access optimized
 // for uploading to the GPU.

@@ -72,6 +72,21 @@
     <ClInclude Include="stb_image\stb_image_write.h">
       <Filter>stb_image</Filter>
     </ClInclude>
+    <ClInclude Include="Model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ResourceManagerImprov.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Walkaround.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -115,6 +130,12 @@
     </ClCompile>
     <ClCompile Include="stb_image\stb_image_write.cpp">
       <Filter>stb_image</Filter>
+    </ClCompile>
+    <ClCompile Include="ModelPC.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScenePC.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

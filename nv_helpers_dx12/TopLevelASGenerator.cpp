@@ -249,6 +249,11 @@ void TopLevelASGenerator::Generate(
   commandList->ResourceBarrier(1, &uavBarrier);
 }
 
+void TopLevelASGenerator::ClearInstances()
+{
+    m_instances.clear();
+}
+
 //--------------------------------------------------------------------------------------------------
 //
 //

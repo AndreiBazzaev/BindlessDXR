@@ -130,7 +130,7 @@ public:
       ID3D12Resource* previousResult = nullptr /// Optional previous acceleration structure, used
                                                /// if an iterative update is requested
   );
-
+  void ClearInstances();
 private:
   /// Helper struct storing the instance data
   struct Instance

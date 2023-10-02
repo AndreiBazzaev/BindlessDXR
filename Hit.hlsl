@@ -39,13 +39,13 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 	uint vertId = 3 * PrimitiveIndex();
 	// Get colors from vertex data
 
-	StructuredBuffer<STriVertex> BTriVertex = ResourceDescriptorHeap[renderResource.modelVertexDataIndex + GeometryIndex() * 3];
-	StructuredBuffer<STriNormal> BTriNormal = ResourceDescriptorHeap[renderResource.modelVertexDataIndex + GeometryIndex() * 3 + 1];
-	StructuredBuffer<int> indices = ResourceDescriptorHeap[renderResource.modelVertexDataIndex + GeometryIndex() * 3 + 2];
+	StructuredBuffer<STriVertex> BTriVertex = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3];
+	StructuredBuffer<STriNormal> BTriNormal = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 1];
+	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 2];
 
 	
 
-	ConstantBuffer<ColorStruct> colBuffer = ResourceDescriptorHeap[renderResource.instanceDataIndex + InstanceID()];
+	ConstantBuffer<ColorStruct> colBuffer = ResourceDescriptorHeap[heapIndexes[3] + InstanceID()];
 
 	float3 hitColor = float3(0.f, 1.f, 0.f);
 
@@ -67,6 +67,7 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 	//;
 	// REMINDER!!!: Please read up on Default Heap usage. An upload heap is used here for code simplicity and because there are very few verts
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());
+	//payload.colorAndDistance = float4(float3(1.f, 1.f, 1.f), RayTCurrent());
 }
 // SECOND HIT SHADER for plane
 [shader("closesthit")]
@@ -87,10 +88,22 @@ void PlaneClosestHit(inout HitInfo payload, Attributes attrib)
 	// Initialize the ray payload 
 	ShadowHitInfo shadowPayload; 
 	shadowPayload.isHit = false; // Trace the ray 
-	RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[renderResource.TlasIndex];
+	RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[heapIndexes[1]];
 	TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 1, 0, 1, ray, shadowPayload);
 	float factor = shadowPayload.isHit ? 0.3 : 1.0; 
 	float3 barycentrics = float3(1.f - attrib.bary.x - attrib.bary.y, attrib.bary.x, attrib.bary.y); 
-	float4 hitColor = float4(float3(0.7, 0.7, 0.3) * factor, RayTCurrent()); 
-	payload.colorAndDistance = float4(hitColor);
+
+
+	uint vertId = 3 * PrimitiveIndex();
+	StructuredBuffer<STriNormal> BTriNormal = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 1];
+	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 2];
+
+
+	// Model space normals
+	float3 hitColor = (BTriNormal[indices[vertId + 0]].normal + 1.f) * 0.5 * barycentrics.x +
+		(BTriNormal[indices[vertId + 1]].normal + 1.f) * 0.5 * barycentrics.y +
+		(BTriNormal[indices[vertId + 2]].normal + 1.f) * 0.5 * barycentrics.z;
+
+	hitColor = hitColor * factor;
+	payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }

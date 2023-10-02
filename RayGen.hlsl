@@ -36,9 +36,9 @@ void RayGen() {
 	RayDesc ray;
 
 	//Bindless
-	ConstantBuffer<CamStruct> camBuffer = ResourceDescriptorHeap[renderResource.camIndex];
-	RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[renderResource.TlasIndex];
-	RWTexture2D<float4>  gOutput = ResourceDescriptorHeap[renderResource.RTOutputHeapIndex];
+	ConstantBuffer<CamStruct> camBuffer = ResourceDescriptorHeap[heapIndexes[2]];
+	RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[heapIndexes[1]];
+	RWTexture2D<float4>  gOutput = ResourceDescriptorHeap[heapIndexes[0]];
 
 	ray.Origin = mul(camBuffer.viewInv, float4(0, 0, 0, 1));
 	float4 target = mul(camBuffer.projectionInv, float4(d.x, -d.y, 1, 1));
