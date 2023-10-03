@@ -39,15 +39,13 @@ public:
 	virtual void OnUpdate();
 	virtual void OnRender();
 	virtual void OnDestroy();
-	// WALKAROUND - change for engine API
-	D3D12HelloTriangle* GetRenderer() {
-		return this;
-	}
+	// Will need to be public to call from Model.cpp and Scene.cpp
 	void LoadModelRecursive(const std::string& name, Model* model);
 	void UploadScene(Scene* scene);
 private:
 	Model* LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups);
-	// REMOVE - GAMEPLAY CALL SIMULATION
+
+	// ------REMOVE - GAMEPLAY CALL SIMULATION------
 	void MakeTestScene();
 	Scene m_myScene;
 	void MakeTestScene1();
@@ -57,17 +55,13 @@ private:
 	ResourceManager m_resourceManager;
 
 	void SwitchScenes();
-	// -----------------------------------
+	// ------------------------------------------
 	static const UINT FrameCount = 2;
 	struct Normal
 	{
 		XMFLOAT3 dir;
 	};
 	struct Vertex
-	{
-		XMFLOAT3 position;
-	};
-	struct VertexM
 	{
 		XMFLOAT3 position;
 	};
