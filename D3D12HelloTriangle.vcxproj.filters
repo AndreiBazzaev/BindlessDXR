@@ -84,9 +84,6 @@
     <ClInclude Include="ResourceManagerImprov.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Walkaround.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

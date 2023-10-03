@@ -60,15 +60,6 @@ private:
 	struct Vertex
 	{
 		XMFLOAT3 position;
-		Vertex(XMFLOAT3 pos)
-			:position(pos) {}
-	};
-	struct IndexesInHeap {
-		uint32_t RTOutputHeapIndex;
-		uint32_t TlasIndex;
-		uint32_t camIndex;
-		uint32_t instanceDataIndex;
-		uint32_t modelVertexDataIndex;
 	};
 	struct VertexM
 	{
@@ -93,7 +84,6 @@ private:
 	UINT64 m_fenceValue;
 
 	void LoadPipeline();
-	void LoadAssets();
 	void PopulateCommandList();
 	void WaitForPreviousFrame();
 
@@ -108,27 +98,22 @@ private:
 		ComPtr<ID3D12Resource> pResult; // Where the AS is 
 		ComPtr<ID3D12Resource> pInstanceDesc; // Hold the matrices of the instances
 	};
-	// #RTX required setup for 1 BLAS with one object and TLAS which contains this one BLAS
+	std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>> m_instances; // Stores BLASes  with the corresponding transforms and number of Hit groups
 
-	nv_helpers_dx12::TopLevelASGenerator m_topLevelASGenerator; // Helper to create TLAS
-	AccelerationStructureBuffers m_topLevelASBuffers;
-	uint32_t m_TlasHeapIndex;
-	std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>> m_instances; // Stores BLASes  with the corresponding transforms
-
-	/// Create the acceleration structure of an instance
-	/// \param vVertexBuffers : pair of buffer and vertex count
-	/// \return AccelerationStructureBuffers for TLAS
 	AccelerationStructureBuffers
 		CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
 							std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers = {},
 	std::vector<ComPtr<ID3D12Resource>> vTransformBuffers = {});
+	// ---------     TLAS   ----------------------------------------
 	/// Create the main acceleration structure that holds all instances of the scene
-	/// \param instances : tuple of BLAS, transform in world and hit group number
+	/// param instances : tuple of BLAS, transform in world and hit group number
 	void CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, bool updateOnly = false);
-	/// Create all acceleration structures, bottom and top
-	void CreateAccelerationStructures();
 	void ReCreateAccelerationStructures();
+	nv_helpers_dx12::TopLevelASGenerator m_topLevelASGenerator; // Helper to create TLAS
+	AccelerationStructureBuffers m_topLevelASBuffers;
+	uint32_t m_TlasHeapIndex;
 	bool m_TlasFirstBuild = true;
+	//--------------------------------------------------------------
 	// setup for SHADING #RTX ----------------------------------------
 	ComPtr<ID3D12RootSignature> CreateRayGenSignature();
 	ComPtr<ID3D12RootSignature> CreateMissSignature();
@@ -163,7 +148,6 @@ private:
 	uint32_t m_RTOutputHeapIndex;
 	// ---------SBT for connectring Shaders and resources together-----
 	// SBT is the CORE of the DXR, uniting the whole setup
-	void CreateShaderBindingTable();
 	void ReCreateShaderBindingTable();
 	nv_helpers_dx12::ShaderBindingTableGenerator m_sbtHelper;
 	ComPtr<ID3D12Resource> m_sbtStorage;
@@ -177,7 +161,7 @@ private:
 	// CAMERA CONTROLS
 	void OnButtonDown(UINT32 lParam); 
 	void OnMouseMove(UINT8 wParam, UINT32 lParam);
-	
+	uint32_t m_time;
 	// Create a CBs for each instance (for example materials)
 	void CreatePerInstanceConstantBuffers();
 	std::vector<ComPtr<ID3D12Resource>> m_perInstanceConstantBuffers;
@@ -186,20 +170,11 @@ private:
 	// #RTX SHADOWS
 	ComPtr<IDxcBlob> m_shadowLibrary;
 	ComPtr<ID3D12RootSignature> m_shadowSignature;
-	// timer - REMOVE
-	uint32_t m_time = 0;
 	// MODEL LOADING
-	//void LoadModel(const std::string& name);
-	//void LoadModelRecursive(const std::string& name);
 	void BuildModelRecursive(tinygltf::Model& model, Model* modelData, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
 		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum);
 	XMMATRIX GlmToXM_mat4(glm::mat4 gmat);
-	// Bindless models
-	//ComPtr<ID3D12Resource> m_modelBLASBuffer; 
-	//uint32_t m_modelVertexDataHeapIndex;
-	//UINT64 resourceHandle;
 	// Bindless
 	std::vector<uint32_t> m_AllHeapIndices;
 	ComPtr<ID3D12Resource> m_HeapIndexBuffer;
-	IndexesInHeap m_HeapIndexes;
 };

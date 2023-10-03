@@ -52,13 +52,8 @@ void D3D12HelloTriangle::OnInit()
 	// Check the raytracing capabilities of the device 
 	CheckRaytracingSupport();
 	CreateShaderResourceHeap();
-	LoadAssets();
-	// Setup the acceleration structures (AS) for raytracing. When setting up 
-	// geometry, each bottom-level AS has its own transform matrix. 
-	//CreateAccelerationStructures();
 	// Allocate the buffer for output #RTX image
 	CreateRaytracingOutputBuffer();
-	//QUESTIONABLE IF WE NEED IT HERE 
 	ThrowIfFailed(m_commandList->Close());
 
 	CreateRaytracingPipeline();
@@ -66,44 +61,21 @@ void D3D12HelloTriangle::OnInit()
 	nv_helpers_dx12::CameraManip.setWindowSize(GetWidth(), GetHeight());
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	CreateCameraBuffer();
-	CreatePerInstanceConstantBuffers();
-	
-	// Create the buffer containing the raytracing result (always output in a
-	// UAV), and create the heap referencing the resources used by the raytracing,
-	// such as the acceleration structure
-	//CreateShaderBindingTable();
 	//--------------------------------------------------------------------
+	CreatePerInstanceConstantBuffers(); // probably we don't even need this. I can't make a use case for this data
 
 	MakeTestScene();
 
 }
 // --------------ROOT SIGNATURES----------------------------
-// Create #RTX RAYGEN Root Signature
+// Create #RTX RAYGEN Root Signature (empty, as we use bindless)
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateRayGenSignature() {
-	nv_helpers_dx12::RootSignatureGenerator rsc; 
-
-	//rsc.AddHeapRangesParameter(
-	//	{ {0 /*u0*/, 1 /* num desc */, 0 /*register space*/,
-	//	D3D12_DESCRIPTOR_RANGE_TYPE_UAV /* UAV output*/,
-	//	1 /*heap slot where the UAV is defined*/}, 
-	//	//{0 /*t0*/, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_SRV /*TLAS*/, 0},
-	//	//{0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_CBV /*Cam*/ ,2} 
-	//	});
-
-	//rsc.AddHeapRangesParameter({ {0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_UAV,0},{0, 1, 0,D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1} });
-	
+	nv_helpers_dx12::RootSignatureGenerator rsc;
 	return rsc.Generate(m_device.Get(), true);
 }
-// Create #RTX  HIT root signture (is empty for now, no resources needed)
+// Create #RTX  HIT root signture (is empty for now, as we use bindless)
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateHitSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
-	// vertices data
-	//rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0); 
-	// indices
-	//rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 1);
-	// Scene BVH
-	//rsc.AddHeapRangesParameter({ { 2 /*t2*/, 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0 /*2nd slot of the heap*/ },});
-
 	return rsc.Generate(m_device.Get(), true);
 }
 // Create #RTX  MISS root signture (is empty for now)
@@ -113,8 +85,7 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateMissSignature() {
 }
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateGlobalSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
-	
-	//rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, 0, 1, 1);
+	// List of all heap indexes
 	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0, 1);
 	return rsc.Generate(m_device.Get(), false);
 }
@@ -233,71 +204,6 @@ void D3D12HelloTriangle::CreateRaytracingOutputBuffer() {
 void D3D12HelloTriangle::CreateShaderResourceHeap() { 
 	m_CbvSrvUavHeap = nv_helpers_dx12::CreateDescriptorHeap( m_device.Get(), 65536, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, true); 
 	m_CbvSrvUavHandle = m_CbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
-}
-void D3D12HelloTriangle::CreateShaderBindingTable() { 
-	// The SBT helper class collects calls to Add*Program.  If called several
-  // times, the helper must be emptied before re-adding shaders.
-	m_sbtHelper.Reset();
-	// The pointer to the beginning of the heap is the only parameter required by
-	// shaders without root parameters
-	D3D12_GPU_DESCRIPTOR_HANDLE srvUavHeapHandle =
-		m_CbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart();
-	// The helper treats both root parameter pointers and heap pointers as void*,
-	// while DX12 uses the
-	// D3D12_GPU_DESCRIPTOR_HANDLE to define heap pointers. The pointer in this
-	// struct is a UINT64, which then has to be reinterpreted as a pointer.
-	auto heapPointer = reinterpret_cast<UINT64*>(srvUavHeapHandle.ptr);
-	// The ray generation only uses heap data
-	m_sbtHelper.AddRayGenerationProgram(L"RayGen", {  });
-	// The miss and hit shaders do not access any external resources: instead they
-	// communicate their results through the ray payload
-	m_sbtHelper.AddMissProgram(L"Miss", {});
-	m_sbtHelper.AddMissProgram(L"ShadowMiss", {});
-	// FOR PER-INSTANCE DATA WE NEED TO PUSH ALL CBs IN THE INSTANCE ORDER TO THE SBT
-	for (int i = 0; i < 3; ++i) {
-		// Even though we will not use heap Pointer for this sahder function, it is passed, as it is specified in RS
-		// We can also just ignore it, but then it make things not clear
-		m_sbtHelper.AddHitGroup(L"HitGroup", { 
-			// for now we just hardcode these values. I do not know if we actually will need to pass Vertex and Index data, but useful to know, how to do it
-			//(void*)(m_modelVertexAndNum[i].first->GetGPUVirtualAddress()),
-			//(void*)(m_modelIndexAndNum[i].first->GetGPUVirtualAddress()),
-			//heapPointer 
-			});
-
-		m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
-	}
-	//  !!!!!!ALL DATA FOR NOW IS JUST A FILLER FOR THE EXAMPLE OF USE
-	m_sbtHelper.AddHitGroup(L"PlaneHitGroup",
-		{
-		//(void*)(m_modelVertexAndNum[0].first->GetGPUVirtualAddress()),
-		//	(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
-		//heapPointer 
-		});
-	m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
-	m_sbtHelper.AddHitGroup(L"HitGroup", { 
-		
-		//(void*)(m_modelVBVs[0].BufferLocation),
-		//	(void*)(m_modelIndexAndNum[0].first->GetGPUVirtualAddress()),
-		//heapPointer
-		});
-	m_sbtHelper.AddHitGroup(L"ShadowHitGroup", {});
-
-
-
-	// Compute the size of the SBT given the number of shaders and their
-	// parameters
-	uint32_t sbtSize = m_sbtHelper.ComputeSBTSize();
-	// Create the SBT on the upload heap. This is required as the helper will use
-	// mapping to write the SBT contents. After the SBT compilation it could be
-	// copied to the default heap for performance.
-	m_sbtStorage = nv_helpers_dx12::CreateBuffer(
-		m_device.Get(), sbtSize, D3D12_RESOURCE_FLAG_NONE,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-	if (!m_sbtStorage) {
-		throw std::logic_error("Could not allocate the shader binding table");
-	}
-	// Compile the SBT from the shader and parameters info
-	m_sbtHelper.Generate(m_sbtStorage.Get(), m_rtStateObjectProps.Get());
 }
 void D3D12HelloTriangle::ReCreateShaderBindingTable() {
 	
@@ -444,39 +350,17 @@ void D3D12HelloTriangle::LoadPipeline()
 	}
 }
 
-
-// Load the sample assets.
-void D3D12HelloTriangle::LoadAssets()
-{
-
-	//LoadModel("Assets/car/scene.gltf"); 
-	//LoadModel("Assets/car/scene.gltf");
-	//LoadModelRecursive("Assets/car/scene.gltf");
-	//LoadModelRecursive("Assets/cars2/scene.gltf");
-	//LoadModelRecursive("Assets/Sponza/Sponza.gltf");
-	//LoadModel("Assets/Cube/Cube.gltf");
-	// Wait for the command list to execute; we are reusing the same command 
-	// list in our main loop but for now, we just want to wait for setup to 
-	// complete before continuing.
-	//WaitForPreviousFrame();
-}
-
 // Update frame-based values.
 void D3D12HelloTriangle::OnUpdate()
 {
 	UpdateCameraBuffer();
-	/*m_HeapIndexes.RTOutputHeapIndex = m_RTOutputHeapIndex;
-	m_HeapIndexes.TlasIndex = m_TlasHeapIndex;
-	m_HeapIndexes.camIndex = m_camHeapIndex;
-	m_HeapIndexes.instanceDataIndex = m_instanceDataHeapIndex;
 
-	m_HeapIndexes.modelVertexDataIndex = m_modelVertexDataHeapIndex;*/
 	// ANIMATE 
 	m_time++;
-	/*std::get<1>(m_instances[0]) = XMMatrixScaling(0.0003f, 0.0003f, 0.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
-	std::get<1>(m_instances[1]) = XMMatrixScaling(0.0001f, 0.0001f, 0.0001f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
-	std::get<1>(m_instances[2]) = XMMatrixScaling(0.0005f, 0.0005f, 0.0005f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f), 0.f);
-
+	std::get<1>(m_instances[0]) = XMMatrixScaling(1.0003f, 1.0003f, 1.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
+	std::get<1>(m_instances[1]) = XMMatrixScaling(0.04f, 0.04f, 0.04f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
+	std::get<1>(m_instances[2]) = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f), 0.f);
+	/*
 	std::get<1>(m_instances[3]) = XMMatrixScaling(0.003f, 0.00001f, 0.003f) * XMMatrixTranslation(0.f, - 1.f, 0.f);
 	std::get<1>(m_instances[4]) = XMMatrixScaling(0.0006f, 0.0006f, 0.0006f);*/
 }
@@ -536,24 +420,19 @@ void D3D12HelloTriangle::PopulateCommandList()
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_outputResource.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	m_commandList->ResourceBarrier(1, &transition);
 	D3D12_DISPATCH_RAYS_DESC desc = {};
-	// The layout of the SBT is as follows: ray generation shader, miss
-	// shaders, hit groups. As described in the CreateShaderBindingTable method,
-	// all SBT entries of a given type have the same size to allow a fixed stride.
-	// The ray generation shaders are always at the beginning of the SBT.
+	
+	// All rayGen sahders first
 	uint32_t rayGenerationSectionSizeInBytes = m_sbtHelper.GetRayGenSectionSize();
 	desc.RayGenerationShaderRecord.StartAddress = m_sbtStorage->GetGPUVirtualAddress();
 	desc.RayGenerationShaderRecord.SizeInBytes = rayGenerationSectionSizeInBytes;
-	// The miss shaders are in the second SBT section, right after the ray
-	// generation shader. We have one miss shader for the camera rays and one
-	// for the shadow rays (not yet), so this section has a size of 2*m_sbtEntrySize. We
-	// also indicate the stride between the two miss shaders, which is the size
-	// of a SBT entry
+	
+	// All miss shaedrs - second
 	uint32_t missSectionSizeInBytes = m_sbtHelper.GetMissSectionSize();
 	desc.MissShaderTable.StartAddress = m_sbtStorage->GetGPUVirtualAddress() + rayGenerationSectionSizeInBytes;
 	desc.MissShaderTable.SizeInBytes = missSectionSizeInBytes;
 	desc.MissShaderTable.StrideInBytes = m_sbtHelper.GetMissEntrySize();
-	// The hit groups section start after the miss shaders. In this sample we
-	// have one 1 hit group for the triangle (for other cases we can use >1 like multiple pixel shaders)
+	
+	// All hit groups - third
 	uint32_t hitGroupsSectionSize = m_sbtHelper.GetHitGroupSectionSize();
 	desc.HitGroupTable.StartAddress = m_sbtStorage->GetGPUVirtualAddress() + rayGenerationSectionSizeInBytes + missSectionSizeInBytes;
 	desc.HitGroupTable.SizeInBytes = hitGroupsSectionSize;
@@ -566,17 +445,11 @@ void D3D12HelloTriangle::PopulateCommandList()
 	m_commandList->SetPipelineState1(m_rtStateObject.Get());
 
 	// Bindless indexes
-	//m_commandList->SetComputeRoot32BitConstants(0, NUM_HEAP_INDEXES, reinterpret_cast<void*>(&m_HeapIndexes), 0);
 	m_commandList->SetComputeRootShaderResourceView(0, m_HeapIndexBuffer.Get()->GetGPUVirtualAddress());
 	// ----------DRAWING ------------------------------------------
 	// Dispatch the rays and write to the raytracing output
 	m_commandList->DispatchRays(&desc);
 	//-----------COPY OUTPUT TO RTV + RETURN STATES----------------
-	// The raytracing output needs to be copied to the actual render target used
-	// for display. For this, we need to transition the raytracing output from a
-	// UAV to a copy source, and the render target buffer to a copy destination.
-	// We can then do the actual copy, before transitioning the render target
-	// buffer into a render target, that will be then used to display the image
 	transition = CD3DX12_RESOURCE_BARRIER::Transition(m_outputResource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	m_commandList->ResourceBarrier(1, &transition);
 	transition = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -584,13 +457,10 @@ void D3D12HelloTriangle::PopulateCommandList()
 	m_commandList->CopyResource(m_renderTargets[m_frameIndex].Get(), m_outputResource.Get());
 	transition = CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	m_commandList->ResourceBarrier(1, &transition);
-
 	//-------------------------------------------------------------------
-	
 
 	// Indicate that the back buffer will now be used to present.
 	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
-
 	ThrowIfFailed(m_commandList->Close());
 }
 
@@ -615,12 +485,6 @@ void D3D12HelloTriangle::WaitForPreviousFrame()
 
 	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
 }
-
-// #RTX 
-// Create a bottom-level acceleration structure based on a list of vertex
-// buffers in GPU memory along with their vertex count. The build is then done
-// in 3 steps: gathering the geometry, computing the sizes of the required
-// buffers, and building the actual AS
 D3D12HelloTriangle::AccelerationStructureBuffers
 D3D12HelloTriangle::CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
 										std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vIndexBuffers,
@@ -643,30 +507,17 @@ D3D12HelloTriangle::CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resou
 
 		}
 	}
-	// The AS build requires some scratch space to store temporary information. 
-	// The amount of scratch memory is dependent on the scene complexity. 
 	UINT64 scratchSizeInBytes = 0; 
-	// The final AS also needs to be stored in addition to the existing vertex 
-	// buffers. It size is also dependent on the scene complexity. 
 	UINT64 resultSizeInBytes = 0; 
 	bottomLevelAS.ComputeASBufferSizes(m_device.Get(), false, &scratchSizeInBytes, &resultSizeInBytes); 
-	// Once the sizes are obtained, the application is responsible for allocating 
-	// the necessary buffers. Since the entire generation will be done on the GPU, 
-	// we can directly allocate those on the default heap 
 	AccelerationStructureBuffers buffers; 
 	buffers.pScratch = nv_helpers_dx12::CreateBuffer( m_device.Get(), scratchSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps); 
 	buffers.pResult = nv_helpers_dx12::CreateBuffer( m_device.Get(), resultSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, nv_helpers_dx12::kDefaultHeapProps); 
-	// Build the acceleration structure. Note that this call integrates a barrier 
-	// on the generated AS, so that it can be used to compute a top-level AS right 
-	// after this method. 
 	bottomLevelAS.Generate(m_commandList.Get(), buffers.pScratch.Get(), buffers.pResult.Get(), false, nullptr); 
 	return buffers;
 }
-//-----------------------------------------------------------------------------
-// Create the main acceleration structure that holds all instances of the scene.
-// Similarly to the bottom-level AS generation, it is done in 3 steps: gathering
-// the instances, computing the memory requirements for the AS, and building the AS itself
-void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, // pair of bottom level AS and matrix of the instance
+// tuple of bottom level AS,  matrix of the instance and number of hit groups
+void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, 
 	bool updateOnly) {
 	if (!updateOnly)
 	{
@@ -677,22 +528,10 @@ void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID
 				// Hit group id refers to the order in which we added Hit Groups to SBT
 				static_cast<UINT>(std::get<2>(instances[i]) * i)); //2 is for 2 shaders - hit and shadow hit
 		}
-		// As for the bottom-level AS, the building the AS requires some scratch space 
-		// to store temporary data in addition to the actual AS. In the case of the 
-		// top-level AS, the instance descriptors also need to be stored in GPU 
-		// memory. This call outputs the memory requirements for each (scratch, 
-		// results, instance descriptors) so that the application can allocate the 
-		// corresponding memory 
 		UINT64 scratchSize, resultSize, instanceDescsSize;
 		m_topLevelASGenerator.ComputeASBufferSizes(m_device.Get(), true, &scratchSize, &resultSize, &instanceDescsSize);
-		// Create the scratch and result buffers. Since the build is all done on GPU, 
-		// those can be allocated on the default heap 
-		
 		m_topLevelASBuffers.pScratch = nv_helpers_dx12::CreateBuffer(m_device.Get(), scratchSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nv_helpers_dx12::kDefaultHeapProps);
 		m_topLevelASBuffers.pResult = nv_helpers_dx12::CreateBuffer(m_device.Get(), resultSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, nv_helpers_dx12::kDefaultHeapProps);
-		// The buffer describing the instances: ID, shader binding information, 
-		// matrices ... Those will be copied into the buffer by the helper through 
-		// mapping, so the buffer has to be allocated on the upload heap. 
 		m_topLevelASBuffers.pInstanceDesc = nv_helpers_dx12::CreateBuffer(m_device.Get(), instanceDescsSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
 		
 	}
@@ -703,42 +542,21 @@ void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID
 	m_topLevelASGenerator.Generate(m_commandList.Get(), m_topLevelASBuffers.pScratch.Get(), m_topLevelASBuffers.pResult.Get(), m_topLevelASBuffers.pInstanceDesc.Get());
 	
 }
-//-----------------------------------------------------------------------------
-// Combine the BLAS and TLAS builds to construct the entire acceleration
-// structure required to raytrace the scene
-void D3D12HelloTriangle::CreateAccelerationStructures() { 
-	
-	
-	//AccelerationStructureBuffers modelBottomLevelBuffers = CreateBottomLevelAS({ m_modelVertexAndNum2 }, { m_modelIndexAndNum2 });
-	/*m_instances = { {m_modelBLASBuffer, XMMatrixIdentity(), 2}, {m_modelBLASBuffer, XMMatrixTranslation(-.6f, 0, 1.f), 2}, {m_modelBLASBuffer, XMMatrixTranslation(.6f, 0, -1.f), 2},
-		{m_modelBLASBuffer, XMMatrixTranslation(0, 0, 0), 2}, {m_modelBLASBuffer, XMMatrixIdentity(), 2} };*/
-	CreateTopLevelAS(m_instances);
-	m_TlasHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), nullptr, m_topLevelASBuffers.pResult->GetGPUVirtualAddress(),
-		m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::AS);
-	// Flush the command list and wait for it to finish 
-	m_commandList->Close(); 
-	ID3D12CommandList *ppCommandLists[] = {m_commandList.Get()}; 
-	m_commandQueue->ExecuteCommandLists(1, ppCommandLists); 
-	m_fenceValue++; 
-	m_commandQueue->Signal(m_fence.Get(), m_fenceValue); 
-	m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent); 
-	WaitForSingleObject(m_fenceEvent, INFINITE); 
-	// Once the command list is finished executing, reset it to be reused for rendering 
-	ThrowIfFailed( m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-}
 void D3D12HelloTriangle::ReCreateAccelerationStructures() {
 
 	CreateTopLevelAS(m_instances);
+	// First we create a resource with a heap pointer
 	if (m_TlasFirstBuild) {
 		m_TlasHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), nullptr, m_topLevelASBuffers.pResult->GetGPUVirtualAddress(),
 			m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::AS);
 		m_TlasFirstBuild = true;
 	}
+	// Then we can just use the same heap pointer but rebuild the resource
 	else {
 		nv_helpers_dx12::ChangeASResourceLoaction(m_device.Get(), m_topLevelASBuffers.pResult->GetGPUVirtualAddress(), m_CbvSrvUavHeap.Get(),
 			m_TlasHeapIndex, nv_helpers_dx12::AS);
 	}
-	// Flush the command list and wait for it to finish 
+
 	m_commandList->Close();
 	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
 	m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
@@ -746,7 +564,6 @@ void D3D12HelloTriangle::ReCreateAccelerationStructures() {
 	m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
 	m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
 	WaitForSingleObject(m_fenceEvent, INFINITE);
-	// Once the command list is finished executing, reset it to be reused for rendering 
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 }
 //-----------------------------------------------------------------------------
@@ -1059,6 +876,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 return model;
 	 }
 	 else {
+		 // DISCUSSION - THIS WAY WE WON'T BE ABLE TO HAVE DIFFERENT SHADER GROUPS FOR THE SAME MODELS
+		 // DO WE WANT THIS? WHEN WILL WE USE THIS?
 		 return resManager->GetModel(name);
 	 }
  }
@@ -1074,14 +893,14 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 GameObject a, b, c;
 	 Model am, bm, cm;
 	
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" }, & am);
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" }, & am);
 	
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" }, & bm);
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" }, & bm);
 	 
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" }, & cm);
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" }, & cm);
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
-	 b.m_transform = glm::scale(glm::vec3(0.4f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));
+	 b.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(2.f, 20.f, 0.f));
 	 c.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(1.f, 0.f, 0.f));
 
 	 m_myScene.AddGameObject(a);

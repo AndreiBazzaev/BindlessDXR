@@ -128,7 +128,6 @@
   <ItemGroup>
     <ClInclude Include="DXRHelper.h" />
     <ClInclude Include="GameObject.h" />
-    <ClInclude Include="Walkaround.h" />
     <ClInclude Include="manipulator.h" />
     <ClInclude Include="Model.h" />
     <ClInclude Include="nv_helpers_dx12\BottomLevelASGenerator.h" />
