@@ -65,6 +65,17 @@ private:
 	{
 		XMFLOAT3 position;
 	};
+	// ---- New Model Loading------
+	struct PrimStruct {
+		UINT primStartIndex;
+	};
+	struct MaterialStruct {
+		UINT hasNormals;
+		UINT hasTangents;
+		UINT hasColors;
+		UINT hasTexcoords;
+
+	};
 	// Pipeline objects.
 	CD3DX12_VIEWPORT m_viewport;
 	CD3DX12_RECT m_scissorRect;
@@ -162,17 +173,13 @@ private:
 	void OnButtonDown(UINT32 lParam); 
 	void OnMouseMove(UINT8 wParam, UINT32 lParam);
 	uint32_t m_time;
-	// Create a CBs for each instance (for example materials)
-	void CreatePerInstanceConstantBuffers();
-	std::vector<ComPtr<ID3D12Resource>> m_perInstanceConstantBuffers;
-	uint32_t m_instanceDataHeapIndex;
 	//----------------------------------------
 	// #RTX SHADOWS
 	ComPtr<IDxcBlob> m_shadowLibrary;
 	ComPtr<ID3D12RootSignature> m_shadowSignature;
 	// MODEL LOADING
 	void BuildModelRecursive(tinygltf::Model& model, Model* modelData, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
-		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum);
+		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum, std::vector<uint32_t>& primitiveIndexes);
 	XMMATRIX GlmToXM_mat4(glm::mat4 gmat);
 	// Bindless
 	std::vector<uint32_t> m_AllHeapIndices;

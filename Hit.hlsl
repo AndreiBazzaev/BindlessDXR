@@ -1,34 +1,18 @@
 #include "Common.hlsl"
+#define COMMON_RESOURCE_OFFSET 3
+#define NUM_PER_PRIMITIVE_BUFFERS 3
 // Shading
 struct ShadowHitInfo
 {
 	bool isHit;
 };
-// Model Data-------------
-struct ColorStruct {
-	float4 col1;
-	float4 col2;
-	float4 col3; 
-	float4 padding;
+struct MaterialStruct {
+	uint hasNormals;
+	uint hasTangents;
+	uint hasColors;
+	uint hasTexcoords;
 
-	float4x4 padding1;
-	float4x4 padding2;
-	float4x4 padding3;
 };
-// Vertex, Index data------
-struct STriVertex
-{
-	float3 vertex;
-};
-struct STriNormal
-{
-	float3 normal;
-};
-//StructuredBuffer<STriVertex> BTriVertex : register(t0);
-//StructuredBuffer<int> indices: register(t1);
-//------------------------
-
-
 
 [shader("closesthit")] 
 void ClosestHit(inout HitInfo payload, Attributes attrib) 
@@ -38,36 +22,33 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 	// to get the first vertex index, we multiply the ID on 3
 	uint vertId = 3 * PrimitiveIndex();
 	// Get colors from vertex data
+	StructuredBuffer<uint> primIndexes = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()]];
+	uint primHeapIndex = primIndexes[GeometryIndex()];
 
-	StructuredBuffer<STriVertex> BTriVertex = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3];
-	StructuredBuffer<STriNormal> BTriNormal = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 1];
-	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 2];
+	float3 hitColor = float3(1.f / 256.f, 1.f / 256.f, 1.f / 256.f) * float(primHeapIndex % 256);
 
+	StructuredBuffer<MaterialStruct> MaterialStructs = ResourceDescriptorHeap[primHeapIndex];
+	MaterialStruct material = MaterialStructs[0];// we have only one
+
+	StructuredBuffer<float3> triVertex = ResourceDescriptorHeap[primHeapIndex + 1]; // + Material
+	StructuredBuffer<float3> triNormal = ResourceDescriptorHeap[primHeapIndex + 2]; // + Material + Positions
+	StructuredBuffer<float4> triTangent = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals]; // + Material + Positions + Normals(optional)
+	StructuredBuffer<float4> triColor = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents]; // + Material + Positions + Normals(optional) + Tangents(optional)
+	StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents + material.hasColors]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional)
+
+	StructuredBuffer<int> indices = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents + material.hasColors + material.hasTexcoords]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texcoords(optional)
+
+
+
+	//float3 hitColor = float3(0.f, 1.f, 0.f);
+
+	//// Model space normals
+	hitColor = (triNormal[indices[vertId + 0]] + 1.f) * 0.5 * barycentrics.x +
+		(triNormal[indices[vertId + 1]] + 1.f) * 0.5 * barycentrics.y +
+		(triNormal[indices[vertId + 2]] + 1.f) * 0.5 * barycentrics.z;
 	
-
-	ConstantBuffer<ColorStruct> colBuffer = ResourceDescriptorHeap[heapIndexes[3] + InstanceID()];
-
-	float3 hitColor = float3(0.f, 1.f, 0.f);
-
-	// Model space normals
-	hitColor = (BTriNormal[indices[vertId + 0]].normal + 1.f) * 0.5 * barycentrics.x +
-		(BTriNormal[indices[vertId + 1]].normal + 1.f) * 0.5 * barycentrics.y +
-		(BTriNormal[indices[vertId + 2]].normal + 1.f) * 0.5 * barycentrics.z;
-	// World space normals
-	/*float3x4 objectToWorldMatrix = ObjectToWorld3x4(); 
-	float3x3 upperLeft3x3 = (float3x3)objectToWorldMatrix; 
-	hitColor = (normalize(mul(BTriNormal[indices[vertId + 0]].normal, upperLeft3x3)) + 1.f) * 0.5 * barycentrics.x +
-		(normalize(mul(BTriNormal[indices[vertId + 1]].normal, upperLeft3x3)) + 1.f) * 0.5 * barycentrics.y +
-		(normalize(mul(BTriNormal[indices[vertId + 2]].normal, upperLeft3x3)) + 1.f) * 0.5 * barycentrics.z;*/
-
-
-	//hitColor =BTriNormal[indices[vertId + 0]].normal
-	//hitColor = colBuffer.col1 * float(GeometryIndex() % 4) / 4.f;
-	
-	//;
-	// REMINDER!!!: Please read up on Default Heap usage. An upload heap is used here for code simplicity and because there are very few verts
+	hitColor = float3(1.f / 4.f, 1.f / 4.f, 1.f / 4.f) * float((material.hasNormals + material.hasTangents + material.hasColors + material.hasTexcoords) % 5);
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());
-	//payload.colorAndDistance = float4(float3(1.f, 1.f, 1.f), RayTCurrent());
 }
 // SECOND HIT SHADER for plane
 [shader("closesthit")]
@@ -95,14 +76,14 @@ void PlaneClosestHit(inout HitInfo payload, Attributes attrib)
 
 
 	uint vertId = 3 * PrimitiveIndex();
-	StructuredBuffer<STriNormal> BTriNormal = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 1];
-	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[4 + InstanceID()] + GeometryIndex() * 3 + 2];
+	StructuredBuffer<float3> triNormal = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()] + GeometryIndex() * NUM_PER_PRIMITIVE_BUFFERS + 1];
+	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()] + GeometryIndex() * NUM_PER_PRIMITIVE_BUFFERS + 2];
 
 
 	// Model space normals
-	float3 hitColor = (BTriNormal[indices[vertId + 0]].normal + 1.f) * 0.5 * barycentrics.x +
-		(BTriNormal[indices[vertId + 1]].normal + 1.f) * 0.5 * barycentrics.y +
-		(BTriNormal[indices[vertId + 2]].normal + 1.f) * 0.5 * barycentrics.z;
+	float3 hitColor = (triNormal[indices[vertId + 0]] + 1.f) * 0.5 * barycentrics.x +
+		(triNormal[indices[vertId + 1]] + 1.f) * 0.5 * barycentrics.y +
+		(triNormal[indices[vertId + 2]] + 1.f) * 0.5 * barycentrics.z;
 
 	hitColor = hitColor * factor;
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());

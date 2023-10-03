@@ -47,7 +47,7 @@ inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
-inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type, UINT stride = 0)
+inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type, UINT stride = 1)
 {
     switch (type) {
         case CBV: {
@@ -90,7 +90,7 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
     heapIndex += 1;
     return heapIndex - 1;
 }
-inline void ChangeASResourceLoaction(ID3D12Device* device, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, ID3D12DescriptorHeap* heapPtr, uint32_t& heapIndex, BufferType type)
+inline void ChangeASResourceLoaction(ID3D12Device* device, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, ID3D12DescriptorHeap* heapPtr, uint32_t& heapIndex)
 {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -101,8 +101,22 @@ inline void ChangeASResourceLoaction(ID3D12Device* device, D3D12_GPU_VIRTUAL_ADD
 
         handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * heapIndex;
         device->CreateShaderResourceView(nullptr, &srvDesc, handle);
+       
 }
-
+inline void ChangeSRVResourceLoaction(ID3D12Device* device, ID3D12Resource* resource, ID3D12DescriptorHeap* heapPtr, uint32_t& heapIndex, UINT stride = 1)
+{
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Buffer.NumElements = resource->GetDesc().Width / stride;
+    srvDesc.Buffer.FirstElement = 0;
+    srvDesc.Buffer.StructureByteStride = stride;
+    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = heapPtr->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * heapIndex;
+    device->CreateShaderResourceView(resource, &srvDesc, handle);
+}
 // Specifies a heap used for uploading. This heap type has CPU access optimized
 // for uploading to the GPU.
 static const D3D12_HEAP_PROPERTIES kUploadHeapProps = {

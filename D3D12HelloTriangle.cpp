@@ -59,7 +59,6 @@ void D3D12HelloTriangle::OnInit()
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	CreateCameraBuffer();
 	//--------------------------------------------------------------------
-	CreatePerInstanceConstantBuffers(); // probably we don't even need this. I can't make a use case for this data
 
 	MakeTestScene();
 
@@ -578,7 +577,7 @@ void D3D12HelloTriangle::ReCreateAccelerationStructures() {
 	// Then we can just use the same heap pointer but rebuild the resource
 	else {
 		nv_helpers_dx12::ChangeASResourceLoaction(m_device.Get(), m_topLevelASBuffers.pResult->GetGPUVirtualAddress(), m_CbvSrvUavHeap.Get(),
-			m_TlasHeapIndex, nv_helpers_dx12::AS);
+			m_TlasHeapIndex);
 	}
 
 	m_commandList->Close();
@@ -656,49 +655,6 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
 	CameraManip.mouseMove(-GET_X_LPARAM(lParam), -GET_Y_LPARAM(lParam), inputs);
 }
- //--------------MAYBE won't be used, as bindless already allows us to surpass this-------------------------------------------------
- void D3D12HelloTriangle::CreatePerInstanceConstantBuffers()
- { // Due to HLSL packing rules, we create the CB with 9 float4 (each needs to start on a 16-byte // boundary) 
-	 XMVECTOR bufferData[] = { 
-		 // A 
-		 XMVECTOR{1.0f, 0.0f, 0.0f, 1.0f}, 
-		 XMVECTOR{1.0f, 0.4f, 0.0f, 1.0f}, 
-		 XMVECTOR{1.f, 0.7f, 0.0f, 1.0f}, 
-		 // B 
-		 XMVECTOR{0.0f, 1.0f, 0.0f, 1.0f},
-		 XMVECTOR{0.0f, 1.0f, 0.4f, 1.0f}, 
-		 XMVECTOR{0.0f, 1.0f, 0.7f, 1.0f}, 
-		 // C 
-		 XMVECTOR{0.0f, 0.0f, 1.0f, 1.0f}, 
-		 XMVECTOR{0.4f, 0.0f, 1.0f, 1.0f}, 
-		 XMVECTOR{0.7f, 0.0f, 1.0f, 1.0f},
-		 // D 
-		 XMVECTOR{0.4f, 0.0f, 0.0f, 1.0f},
-		 XMVECTOR{0.1f, 0.2f, 0.0f, 1.0f},
-		 XMVECTOR{0.7f, 0.1f, 0.0f, 1.0f}, };
-	 m_perInstanceConstantBuffers.resize(4); 
-	 int i = 0; 
-	 for (auto& cb : m_perInstanceConstantBuffers) 
-	 { 
-		 const uint32_t bufferSize = sizeof(XMVECTOR) * 3;
-		cb = nv_helpers_dx12::CreateBuffer(m_device.Get(), ROUND_UP(bufferSize,
-			 D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-		 if (i == 0) {
-			 m_instanceDataHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), cb.Get(), cb->GetGPUVirtualAddress(),
-				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::CBV);
-		 }
-		 else {
-			 nv_helpers_dx12::CreateBufferView(m_device.Get(), cb.Get(), cb->GetGPUVirtualAddress(),
-				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::CBV);
-		 }
-		
-		 uint8_t* pData; 
-		 ThrowIfFailed(cb->Map(0, nullptr, (void**)&pData)); 
-		 memcpy(pData, &bufferData[i * 3], bufferSize); 
-		 cb->Unmap(0, nullptr); 
-		 ++i; 
-	 }
- }
  // -------------Loads GLTF from file, launches recursion and stores BLAS
  void D3D12HelloTriangle::LoadModelRecursive(const std::string& name, Model* model)
  {
@@ -718,70 +674,50 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 else {
 		 printf("SUCCESS!\n");
 	 }
+	 // Data for BLAS creation
 	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> modelVertexAndNum;
 	 std::vector <std::pair<ComPtr<ID3D12Resource>, uint32_t>> modelIndexAndNum;
 	 std::vector <ComPtr<ID3D12Resource >> transforms;
+	 std::vector<uint32_t> primitiveIndexes = { 0 };
 
+	 // The first data for the model - its primitive indexes buffer
+	  // Update Primitive Buffer according to the new data
+	 ComPtr<ID3D12Resource> primBuffer;
+	 CD3DX12_RANGE readRange(0, 0);
+	 primBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+	 UINT8* pPrimiBegin;
+	 ThrowIfFailed(primBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pPrimiBegin)));
+	 memcpy(pPrimiBegin, &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
+	 primBuffer->Unmap(0, nullptr);
+	 // ---------------Heap Upload------------------------
+	 model->m_heapPointer = nv_helpers_dx12::CreateBufferView(m_device.Get(), primBuffer.Get(),primBuffer->GetGPUVirtualAddress(),
+		 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(uint32_t));
+	 primitiveIndexes.clear();
+	 // ---------------Upload model data to GPU
 	 auto& scene = m_TestModel.scenes[m_TestModel.defaultScene];
 	 for (size_t i = 0; i < scene.nodes.size(); i++) {
-		 BuildModelRecursive(m_TestModel, model, scene.nodes[i], XMMatrixIdentity(), transforms, modelVertexAndNum, modelIndexAndNum);
+		 BuildModelRecursive(m_TestModel, model, scene.nodes[i], XMMatrixIdentity(), transforms, modelVertexAndNum, modelIndexAndNum, primitiveIndexes);
 	 }
 
+	 // --------Update Primitive Buffer according to the new data
+	 ComPtr<ID3D12Resource> newPrimBuffer;
+	 newPrimBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+	 UINT8* pNewPrimiBegin;
+	 ThrowIfFailed(newPrimBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNewPrimiBegin)));
+	 memcpy(pNewPrimiBegin, &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
+	 newPrimBuffer->Unmap(0, nullptr);
+	 
+	 // ---------------Heap Data Update------------------------
+	 nv_helpers_dx12::ChangeSRVResourceLoaction(m_device.Get(), newPrimBuffer.Get(), m_CbvSrvUavHeap.Get(), model->m_heapPointer, sizeof(uint32_t));
 
 	 AccelerationStructureBuffers AS = CreateBottomLevelAS(modelVertexAndNum, modelIndexAndNum, transforms);
 	 ComPtr<ID3D12Resource> m_modelBLASBuffer = AS.pResult;
 	 model->m_BlasPointer = reinterpret_cast<UINT64>(m_modelBLASBuffer.Get());
  }
- // Move to scene?
- void D3D12HelloTriangle::UploadScene(Scene* scene)
- {
-	 // Sync with model data uploading
-	 m_commandList->Close();
-	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	 m_fenceValue++;
-	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	 WaitForSingleObject(m_fenceEvent, INFINITE);
-	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-	 // Clear
-	 m_instances.clear();
-	 m_AllHeapIndices.clear();
-	 m_topLevelASGenerator.ClearInstances();
-	 
-	 // -----------------------------------
-	 // FILL in Model Data
-	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
-		
-		 ComPtr<ID3D12Resource> BlasResource = reinterpret_cast<ID3D12Resource*>(scene->m_sceneObjects[i].m_model->m_BlasPointer);
-		 m_instances.push_back({ BlasResource, GlmToXM_mat4(scene->m_sceneObjects[i].m_transform), scene->m_sceneObjects[i].m_model->m_hitGroups.size()});
-	 }
-	 // Update TLAS
-	 ReCreateAccelerationStructures();
-	 // Update SBT
-	 ReCreateShaderBindingTable(scene);
 
-	 // Fill in indexes, used for any set of models
-	 m_AllHeapIndices.push_back(m_RTOutputHeapIndex);
-	 m_AllHeapIndices.push_back(m_TlasHeapIndex);
-	 m_AllHeapIndices.push_back(m_camHeapIndex);
-	 m_AllHeapIndices.push_back(m_instanceDataHeapIndex);
-	 // Fill in model indexes
-	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
-		 m_AllHeapIndices.push_back(scene->m_sceneObjects[i].m_model->m_heapPointer);
-	 }
-	 // Upload HEAP INDEXES buffer to gpu
-	 m_HeapIndexBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * m_AllHeapIndices.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-	 uint32_t* pData;
-	 CD3DX12_RANGE readRange(0, 0);
-	 m_HeapIndexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pData));
-	 memcpy(pData, m_AllHeapIndices.data(), sizeof(uint32_t) * m_AllHeapIndices.size()); m_HeapIndexBuffer->Unmap(0, nullptr);
-	 // Close cmd list
-	 ThrowIfFailed(m_commandList->Close());
- }
 
  void D3D12HelloTriangle::BuildModelRecursive(tinygltf::Model& model, Model* modelData, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
-	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum) {
+	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum, std::vector<uint32_t>& primitiveIndexes) {
 	 HRESULT hr = S_OK;
 	 // get the needed node
 	 auto& glTFNode = model.nodes[nodeIndex];
@@ -897,35 +833,143 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 memcpy(pIndexDataBegin, &indexData[0], indexDataSize);
 				 modelIndexAndNum.back().first->Unmap(0, nullptr);
 
-				 // Normals 
 
-				 ComPtr<ID3D12Resource> newNormalBuffer;
-				 const tinygltf::Accessor& normalAccessor = model.accessors[prim.attributes.at("NORMAL")];
-				 const tinygltf::BufferView& normalBufferView = model.bufferViews[normalAccessor.bufferView];
-				 UINT normalDataSize = normalAccessor.count * normalAccessor.ByteStride(normalBufferView);
-				 const float* normalData = reinterpret_cast<const float*>(&model.buffers[normalBufferView.buffer].data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
-
-				 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-				 UINT8* pNormalataBegin;
-				 ThrowIfFailed(newNormalBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNormalataBegin)));
-				 memcpy(pNormalataBegin, normalData, normalDataSize);
-				 newNormalBuffer->Unmap(0, nullptr);
-
-				 // Bindless
-				 if (modelVertexAndNum.size() == 1) {
-					 // Positions
-					 modelData->m_heapPointer = nv_helpers_dx12::CreateBufferView(m_device.Get(), modelVertexAndNum.back().first.Get(), modelVertexAndNum.back().first->GetGPUVirtualAddress(),
-						 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
+				
+				 /*
+				 -------Primitive in heap---------
+				 Material
+				 Positions
+				 Normals  (optional)
+				 Tangents (optional)
+				 Colors   (optional)
+				 TexCoords (optional)
+				 Indexes
+				 Transform
+				 */
+				
+				 //
+				 MaterialStruct primMat;
+				 // Fill in and Upload material data
+				 {
+					 // Check which model data we have
+					 {
+					 // -----------------Normals --------------------------
+					 if (prim.attributes.find("NORMAL") != prim.attributes.end())
+						 primMat.hasNormals = 1;
+					 else
+						 primMat.hasNormals = 0;
+					 // -----------------Tangents --------------------------
+					 if (prim.attributes.find("TANGENT") != prim.attributes.end())
+						 primMat.hasTangents = 1;
+					 else
+						 primMat.hasTangents = 0;
+					 // -----------------Colors --------------------------
+					 if (prim.attributes.find("COLOR_0") != prim.attributes.end())
+						 primMat.hasColors = 1;
+					 else
+						 primMat.hasColors = 0;
+					 // -----------------Texcoords --------------------------
+					 if (prim.attributes.find("TEXCOORD_0") != prim.attributes.end())
+						 primMat.hasTexcoords = 1;
+					 else
+						 primMat.hasTexcoords = 0; 
+					 }
+					 //----------------Create material Buffer + Push to Heap-----------------------
+					 {
+						 ComPtr<ID3D12Resource> newMatBuffer;
+						 newMatBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(MaterialStruct), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+						 UINT8* pMaterialBegin;
+						 ThrowIfFailed(newMatBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pMaterialBegin)));
+						 memcpy(pMaterialBegin, &primMat, sizeof(MaterialStruct));
+						 newMatBuffer->Unmap(0, nullptr);
+						 // ---------------Heap Upload------------------------
+						 // WE START PRIMITIVE DATA IN A HEAP FROM MATERIAL OF THE FIRST PRIMITIVE
+						 primitiveIndexes.push_back(
+							 nv_helpers_dx12::CreateBufferView(m_device.Get(), newMatBuffer.Get(), newMatBuffer->GetGPUVirtualAddress(),
+								 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(MaterialStruct)));
+					 }
 				 }
-				 else {
-					 // Positions
-					 nv_helpers_dx12::CreateBufferView(m_device.Get(), modelVertexAndNum.back().first.Get(), modelVertexAndNum.back().first->GetGPUVirtualAddress(),
-						 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
+				 // Upload Positions to Heap
+				 nv_helpers_dx12::CreateBufferView(m_device.Get(), modelVertexAndNum.back().first.Get(), modelVertexAndNum.back().first->GetGPUVirtualAddress(),
+					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT3));
+				 // Fill in and Upload to Heap arbitrary Vertex data
+				 {
+					 // -----------------Normals --------------------------
+					 if (primMat.hasNormals == 1) {
+						 ComPtr<ID3D12Resource> newNormalBuffer;
+						 const tinygltf::Accessor& normalAccessor = model.accessors[prim.attributes.at("NORMAL")];
+						 const tinygltf::BufferView& normalBufferView = model.bufferViews[normalAccessor.bufferView];
+						 UINT normalDataSize = normalAccessor.count * normalAccessor.ByteStride(normalBufferView);
+						 const float* normalData = reinterpret_cast<const float*>(&model.buffers[normalBufferView.buffer].data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
+
+						 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+						 UINT8* pNormalBegin;
+						 ThrowIfFailed(newNormalBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNormalBegin)));
+						 memcpy(pNormalBegin, normalData, normalDataSize);
+						 newNormalBuffer->Unmap(0, nullptr);
+						 // --------Upload to Heap-----------
+						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newNormalBuffer.Get(), newNormalBuffer->GetGPUVirtualAddress(),
+							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT3));
+					 }
+					 //------------------------------------------------------
+
+					 // -----------------Tangents --------------------------
+					 if (primMat.hasTangents == 1) {
+						 ComPtr<ID3D12Resource> newTangentBuffer;
+						 const tinygltf::Accessor& tangentAccessor = model.accessors[prim.attributes.at("TANGENT")];
+						 const tinygltf::BufferView& tangentBufferView = model.bufferViews[tangentAccessor.bufferView];
+						 UINT tangentDataSize = tangentAccessor.count * tangentAccessor.ByteStride(tangentBufferView);
+						 const float* tangentData = reinterpret_cast<const float*>(&model.buffers[tangentBufferView.buffer].data[tangentBufferView.byteOffset + tangentAccessor.byteOffset]);
+
+						 newTangentBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), tangentDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+						 UINT8* pTangentBegin;
+						 ThrowIfFailed(newTangentBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pTangentBegin)));
+						 memcpy(pTangentBegin, tangentData, tangentDataSize);
+						 newTangentBuffer->Unmap(0, nullptr);
+						 // --------Upload to Heap-----------
+						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newTangentBuffer.Get(), newTangentBuffer->GetGPUVirtualAddress(),
+							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT4));
+					 }
+					 //------------------------------------------------------
+
+					 // -----------------Colors --------------------------
+					 if (primMat.hasColors == 1) {
+						 ComPtr<ID3D12Resource> newColorBuffer;
+						 const tinygltf::Accessor& colorAccessor = model.accessors[prim.attributes.at("COLOR_0")];
+						 const tinygltf::BufferView& colorBufferView = model.bufferViews[colorAccessor.bufferView];
+						 UINT colorDataSize = colorAccessor.count * colorAccessor.ByteStride(colorBufferView);
+						 const float* colorData = reinterpret_cast<const float*>(&model.buffers[colorBufferView.buffer].data[colorBufferView.byteOffset + colorAccessor.byteOffset]);
+
+						 newColorBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), colorDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+						 UINT8* pColorBegin;
+						 ThrowIfFailed(newColorBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pColorBegin)));
+						 memcpy(pColorBegin, colorData, colorDataSize);
+						 newColorBuffer->Unmap(0, nullptr);
+						 // --------Upload to Heap-----------
+						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newColorBuffer.Get(), newColorBuffer->GetGPUVirtualAddress(),
+							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT4));
+					 }
+					 //------------------------------------------------------
+
+					 // -----------------Texcoords --------------------------
+					 if (primMat.hasTexcoords == 1) {
+						 ComPtr<ID3D12Resource> newTexcoordBuffer;
+						 const tinygltf::Accessor& texcoordAccessor = model.accessors[prim.attributes.at("TEXCOORD_0")];
+						 const tinygltf::BufferView& texcoordBufferView = model.bufferViews[texcoordAccessor.bufferView];
+						 UINT texcoordDataSize = texcoordAccessor.count * texcoordAccessor.ByteStride(texcoordBufferView);
+						 const float* texcoordData = reinterpret_cast<const float*>(&model.buffers[texcoordBufferView.buffer].data[texcoordBufferView.byteOffset + texcoordAccessor.byteOffset]);
+
+						 newTexcoordBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), texcoordDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+						 UINT8* pTexcoordBegin;
+						 ThrowIfFailed(newTexcoordBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pTexcoordBegin)));
+						 memcpy(pTexcoordBegin, texcoordData, texcoordDataSize);
+						 newTexcoordBuffer->Unmap(0, nullptr);
+						 // --------Upload to Heap-----------
+						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newTexcoordBuffer.Get(), newTexcoordBuffer->GetGPUVirtualAddress(),
+							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT2));
+					 }
+					 //------------------------------------------------------
 				 }
-				 // Other vertex data
-					 // Normals
-				 nv_helpers_dx12::CreateBufferView(m_device.Get(), newNormalBuffer.Get(), newNormalBuffer->GetGPUVirtualAddress(),
-					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Normal));
 				 //----------------Indices
 				 nv_helpers_dx12::CreateBufferView(m_device.Get(), modelIndexAndNum.back().first.Get(), modelIndexAndNum.back().first->GetGPUVirtualAddress(),
 					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(UINT));
@@ -936,10 +980,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
 	 // continue with node's children (we pass paren's model matrix to get the correct transform for children)
 	 for (size_t i = 0; i < glTFNode.children.size(); i++) {
-		 BuildModelRecursive(model, modelData, glTFNode.children[i], modelSpaceTrans, transforms, modelVertexAndNum, modelIndexAndNum);
+		 BuildModelRecursive(model, modelData, glTFNode.children[i], modelSpaceTrans, transforms, modelVertexAndNum, modelIndexAndNum, primitiveIndexes);
 	 }
  }
- // Move to model?
+ // Move to model.cpp?
  Model* D3D12HelloTriangle::LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups)
  {
 	 Model model;
@@ -955,6 +999,52 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	// DO WE WANT THIS? WHEN WILL WE USE THIS?
 	return resManager->GetModel(name);
  }
+ // Move to scene.cpp?
+ void D3D12HelloTriangle::UploadScene(Scene* scene)
+ {
+	 // Sync with model data uploading
+	 m_commandList->Close();
+	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
+	 m_fenceValue++;
+	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
+	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
+	 WaitForSingleObject(m_fenceEvent, INFINITE);
+	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+	 // Clear
+	 m_instances.clear();
+	 m_AllHeapIndices.clear();
+	 m_topLevelASGenerator.ClearInstances();
+
+	 // -----------------------------------
+	 // FILL in Model Data
+	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
+
+		 ComPtr<ID3D12Resource> BlasResource = reinterpret_cast<ID3D12Resource*>(scene->m_sceneObjects[i].m_model->m_BlasPointer);
+		 m_instances.push_back({ BlasResource, GlmToXM_mat4(scene->m_sceneObjects[i].m_transform), scene->m_sceneObjects[i].m_model->m_hitGroups.size() });
+	 }
+	 // Update TLAS
+	 ReCreateAccelerationStructures();
+	 // Update SBT
+	 ReCreateShaderBindingTable(scene);
+
+	 // Fill in indexes, used for any set of models
+	 m_AllHeapIndices.push_back(m_RTOutputHeapIndex);
+	 m_AllHeapIndices.push_back(m_TlasHeapIndex);
+	 m_AllHeapIndices.push_back(m_camHeapIndex);
+	 // Fill in model indexes
+	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
+		 m_AllHeapIndices.push_back(scene->m_sceneObjects[i].m_model->m_heapPointer);
+	 }
+	 // Upload HEAP INDEXES buffer to gpu
+	 m_HeapIndexBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * m_AllHeapIndices.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+	 uint32_t* pData;
+	 CD3DX12_RANGE readRange(0, 0);
+	 m_HeapIndexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pData));
+	 memcpy(pData, m_AllHeapIndices.data(), sizeof(uint32_t) * m_AllHeapIndices.size()); m_HeapIndexBuffer->Unmap(0, nullptr);
+	 // Close cmd list
+	 ThrowIfFailed(m_commandList->Close());
+ }
  // Move this to helper?
  XMMATRIX D3D12HelloTriangle::GlmToXM_mat4(glm::mat4 gmat) {
 	 XMMATRIX xmat;
@@ -968,11 +1058,11 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	
 	 GameObject a, b, c;
 	
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 	
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 	 
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
 	 b.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(2.f, 20.f, 0.f));
