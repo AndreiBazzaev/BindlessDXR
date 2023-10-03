@@ -46,10 +46,14 @@ public:
 	void LoadModelRecursive(const std::string& name, Model* model);
 	void UploadScene(Scene* scene);
 private:
-	Model* LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups, Model* model);
+	Model* LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups);
 	// REMOVE - GAMEPLAY CALL SIMULATION
 	void MakeTestScene();
 	Scene m_myScene;
+	void MakeTestScene1();
+	int m_currentScene = 0;
+	int m_requestedScene = 0;
+	Scene m_myScene1;
 	ResourceManager m_resourceManager;
 	// 
 	static const UINT FrameCount = 2;
@@ -148,7 +152,7 @@ private:
 	uint32_t m_RTOutputHeapIndex;
 	// ---------SBT for connectring Shaders and resources together-----
 	// SBT is the CORE of the DXR, uniting the whole setup
-	void ReCreateShaderBindingTable();
+	void ReCreateShaderBindingTable(Scene* scene);
 	nv_helpers_dx12::ShaderBindingTableGenerator m_sbtHelper;
 	ComPtr<ID3D12Resource> m_sbtStorage;
 	//---------------------------------------------------------------------

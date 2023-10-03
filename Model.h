@@ -1,9 +1,8 @@
 #pragma once
-#include "ResourceManagerImprov.h"
 #include <string>
 #include <vector>
 //class D3D12HelloTriangle;
-	
+class ResourceManager;
 class Model {
 public:
 	//Model(D3D12HelloTriangle* app) {
