@@ -21,8 +21,6 @@
 #include "glm/gtc/type_ptr.hpp"
 #include "manipulator.h" 
 #include "Windowsx.h"
-#define NumRayTypes 2
-#define NUM_HEAP_INDEXES 5
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
@@ -55,7 +53,6 @@ void D3D12HelloTriangle::OnInit()
 	// Allocate the buffer for output #RTX image
 	CreateRaytracingOutputBuffer();
 	//ThrowIfFailed(m_commandList->Close());
-
 	CreateRaytracingPipeline();
 	// Camera
 	nv_helpers_dx12::CameraManip.setWindowSize(GetWidth(), GetHeight());
@@ -182,6 +179,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 
 }
 
+// --------- RT Output - buffer from which we copy data to the Render Target ----
 void D3D12HelloTriangle::CreateRaytracingOutputBuffer() {
 	D3D12_RESOURCE_DESC resDesc = {}; 
 	resDesc.DepthOrArraySize = 1; 
@@ -201,10 +199,12 @@ void D3D12HelloTriangle::CreateRaytracingOutputBuffer() {
 	m_RTOutputHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), m_outputResource.Get(), m_outputResource->GetGPUVirtualAddress(),
 			m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::UAV);
 }
+// --------- Create CBV SRV UAV heap
 void D3D12HelloTriangle::CreateShaderResourceHeap() { 
 	m_CbvSrvUavHeap = nv_helpers_dx12::CreateDescriptorHeap( m_device.Get(), 65536, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, true); 
 	m_CbvSrvUavHandle = m_CbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 }
+// --------- For a particular scene recreate an SBT - shader + resource bindings for each BLAS
 void D3D12HelloTriangle::ReCreateShaderBindingTable(Scene* scene) {
 	
 	m_sbtHelper.Reset();
@@ -349,11 +349,28 @@ void D3D12HelloTriangle::LoadPipeline()
 		}
 	}
 }
+// Sets the scene to the proper one after the button callback
+void D3D12HelloTriangle::SwitchScenes() {
+	if (m_currentScene != m_requestedScene) {
+		ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+		m_currentScene = m_requestedScene;
 
+		switch (m_currentScene) {
+		case(0):
+			MakeTestScene();
+			break;
+		case(1):
+			MakeTestScene1();
+			break;
+		}
+		WaitForPreviousFrame();
+	}
+}
 // Update frame-based values.
 void D3D12HelloTriangle::OnUpdate()
 {
-	
+	// Switches the active scene if this is required
+	SwitchScenes();
 
 	UpdateCameraBuffer();
 
@@ -381,20 +398,7 @@ void D3D12HelloTriangle::OnRender()
 	ThrowIfFailed(m_swapChain->Present(1, 0));
 
 	WaitForPreviousFrame();
-	if (m_currentScene != m_requestedScene) {
-		ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-		m_currentScene = m_requestedScene;
-
-		switch (m_currentScene) {
-		case(0):
-			MakeTestScene();
-			break;
-		case(1):
-			MakeTestScene1();
-			break;
-		}
-		WaitForPreviousFrame();
-	}
+	
 }
 
 void D3D12HelloTriangle::OnDestroy()
@@ -405,6 +409,8 @@ void D3D12HelloTriangle::OnDestroy()
 
 	CloseHandle(m_fenceEvent);
 }
+
+// Switches Active Scenes
 void D3D12HelloTriangle::OnKeyUp(UINT8 key)
 { 
 	m_requestedScene += 1;
@@ -434,7 +440,7 @@ void D3D12HelloTriangle::PopulateCommandList()
 	// Set global RS
 	m_commandList->SetComputeRootSignature(m_globalSignature.Get());
 
-	
+	// RT output should be writable in sahders
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_outputResource.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	m_commandList->ResourceBarrier(1, &transition);
 	D3D12_DISPATCH_RAYS_DESC desc = {};
@@ -462,7 +468,7 @@ void D3D12HelloTriangle::PopulateCommandList()
 	// Bind the raytracing pipeline
 	m_commandList->SetPipelineState1(m_rtStateObject.Get());
 
-	// Bindless indexes
+	// Heap indexes for Bindless rendering
 	m_commandList->SetComputeRootShaderResourceView(0, m_HeapIndexBuffer.Get()->GetGPUVirtualAddress());
 	// ----------DRAWING ------------------------------------------
 	// Dispatch the rays and write to the raytracing output
@@ -584,8 +590,7 @@ void D3D12HelloTriangle::ReCreateAccelerationStructures() {
 	WaitForSingleObject(m_fenceEvent, INFINITE);
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 }
-//-----------------------------------------------------------------------------
-// Camera----------------------------------------------------------------------
+// Camera----REWRITE FOR A PROPER CAM--------------------------------------------------------------
 void D3D12HelloTriangle::CreateCameraBuffer() {
 	uint32_t nbMatrix = 4; // view, perspective, viewInv, perspectiveInv 
 	m_cameraBufferSize = nbMatrix * sizeof(XMMATRIX); // discuss, how we can work with GLM instead of DXMath
@@ -651,7 +656,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
 	CameraManip.mouseMove(-GET_X_LPARAM(lParam), -GET_Y_LPARAM(lParam), inputs);
 }
- //------------------------------------------------------------------------------
+ //--------------MAYBE won't be used, as bindless already allows us to surpass this-------------------------------------------------
  void D3D12HelloTriangle::CreatePerInstanceConstantBuffers()
  { // Due to HLSL packing rules, we create the CB with 9 float4 (each needs to start on a 16-byte // boundary) 
 	 XMVECTOR bufferData[] = { 
@@ -694,113 +699,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 ++i; 
 	 }
  }
- /*void D3D12HelloTriangle::LoadModel(const std::string& name)
- {
-	 tinygltf::TinyGLTF context;
-	 std::string error;
-	 std::string warning;
-	 tinygltf::Model m_TestModel;
-	 if (!context.LoadASCIIFromFile(&m_TestModel, &error, &warning, name)) {
-		 if (!error.empty()) {
-			 printf("ERROR!\n");
-		 }
-		 if (!warning.empty()) {
-			 printf( "WARNING!\n");
-		 }
-		 printf("Couldn't find file. (%s)", name.c_str());
-	 }
-	 else {
-		 printf("SUCCESS!\n");
-	 }
-	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> m_modelVertexAndNum;
-	 std::vector <std::pair<ComPtr<ID3D12Resource>, uint32_t>> m_modelIndexAndNum;
-	 for (auto& mesh : m_TestModel.meshes) {
-		 for (auto& prim : mesh.primitives) {
-			 ComPtr<ID3D12Resource> newVBuffer;
-			 m_modelVertexAndNum.push_back({ newVBuffer, 0 });
-
-			 ComPtr<ID3D12Resource> newIBuffer;
-			 m_modelIndexAndNum.push_back({ newIBuffer, 0 });
-
-			 const tinygltf::Accessor& vertexAccessor = m_TestModel.accessors[prim.attributes.at("POSITION")];
-			 const tinygltf::Accessor& indexAccessor = m_TestModel.accessors[prim.indices];
-
-			 const tinygltf::BufferView& vertexBufferView = m_TestModel.bufferViews[vertexAccessor.bufferView];
-			 const tinygltf::BufferView& indexBufferView = m_TestModel.bufferViews[indexAccessor.bufferView];
-
-
-			 UINT vertexDataSize = vertexAccessor.count * vertexAccessor.ByteStride(vertexBufferView);
-			 UINT indexDataSize = indexAccessor.count * indexAccessor.ByteStride(indexBufferView);
-
-			 const float* vertexData = reinterpret_cast<const float*>(&m_TestModel.buffers[vertexBufferView.buffer].data[vertexBufferView.byteOffset + vertexAccessor.byteOffset]);
-			 const UINT* indexData = reinterpret_cast<const UINT*>(&m_TestModel.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-
-			 
-			 m_modelVertexAndNum.back().second = vertexAccessor.count;
-			 m_modelIndexAndNum.back().second = indexAccessor.count;
-
-			 m_modelVertexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), vertexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-			 UINT8* pVertexDataBegin;
-			 CD3DX12_RANGE readRange(0, 0);
-			 ThrowIfFailed(m_modelVertexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-			 memcpy(pVertexDataBegin, vertexData, vertexDataSize);
-			 m_modelVertexAndNum.back().first->Unmap(0, nullptr);
-
-
-			 m_modelIndexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), indexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-			 // Copy the triangle data to the index buffer.
-			 UINT8* pIndexDataBegin;
-			 ThrowIfFailed(m_modelIndexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin)));
-			 memcpy(pIndexDataBegin, indexData, indexDataSize);
-			 m_modelIndexAndNum.back().first->Unmap(0, nullptr);
-
-			 // Normals 
-
-			 ComPtr<ID3D12Resource> newNormalBuffer;
-			 const tinygltf::Accessor& normalAccessor = m_TestModel.accessors[prim.attributes.at("NORMAL")];
-			 const tinygltf::BufferView& normalBufferView = m_TestModel.bufferViews[normalAccessor.bufferView];
-			 UINT normalDataSize = normalAccessor.count * normalAccessor.ByteStride(normalBufferView);
-			 const float* normalData = reinterpret_cast<const float*>(&m_TestModel.buffers[normalBufferView.buffer].data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
-			 
-			 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-			 UINT8* pNormalataBegin;
-			 ThrowIfFailed(newNormalBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNormalataBegin)));
-			 memcpy(pNormalataBegin, normalData, normalDataSize);
-			 newNormalBuffer->Unmap(0, nullptr);
-
-			 // Bindless
-			 if (m_modelVertexAndNum.size() == 1) {
-				 // Positions
-				 m_modelVertexDataHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), m_modelVertexAndNum.back().first.Get(), m_modelVertexAndNum.back().first->GetGPUVirtualAddress(),
-					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
-			 }
-			 else {
-				 // Positions
-				 nv_helpers_dx12::CreateBufferView(m_device.Get(), m_modelVertexAndNum.back().first.Get(), m_modelVertexAndNum.back().first->GetGPUVirtualAddress(),
-					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Vertex));
-			 }
-			 // Other vertex data
-				 // Normals
-			 nv_helpers_dx12::CreateBufferView(m_device.Get(), newNormalBuffer.Get(), newNormalBuffer->GetGPUVirtualAddress(),
-				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(Normal));
-			 //----------------Indices
-			 nv_helpers_dx12::CreateBufferView(m_device.Get(), m_modelIndexAndNum.back().first.Get(), m_modelIndexAndNum.back().first->GetGPUVirtualAddress(),
-				 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(UINT));
-		 }
-	 }
-	 //WaitForPreviousFrame();
-	 AccelerationStructureBuffers AS = CreateBottomLevelAS(m_modelVertexAndNum, m_modelIndexAndNum);
-	 m_modelBLASBuffer = AS.pResult;
-	 m_commandList->Close();
-	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	 m_fenceValue++;
-	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	 WaitForSingleObject(m_fenceEvent, INFINITE);
-	 // Once the command list is finished executing, reset it to be reused for rendering 
-	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
- }*/
+ // -------------Loads GLTF from file, launches recursion and stores BLAS
  void D3D12HelloTriangle::LoadModelRecursive(const std::string& name, Model* model)
  {
 	 tinygltf::TinyGLTF context;
@@ -832,11 +731,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 AccelerationStructureBuffers AS = CreateBottomLevelAS(modelVertexAndNum, modelIndexAndNum, transforms);
 	 ComPtr<ID3D12Resource> m_modelBLASBuffer = AS.pResult;
 	 model->m_BlasPointer = reinterpret_cast<UINT64>(m_modelBLASBuffer.Get());
-
-
-	
  }
-
+ // Move to scene?
  void D3D12HelloTriangle::UploadScene(Scene* scene)
  {
 	 // Sync with model data uploading
@@ -870,6 +766,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 m_AllHeapIndices.push_back(m_TlasHeapIndex);
 	 m_AllHeapIndices.push_back(m_camHeapIndex);
 	 m_AllHeapIndices.push_back(m_instanceDataHeapIndex);
+	 // Fill in model indexes
 	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
 		 m_AllHeapIndices.push_back(scene->m_sceneObjects[i].m_model->m_heapPointer);
 	 }
@@ -882,70 +779,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 // Close cmd list
 	 ThrowIfFailed(m_commandList->Close());
  }
- Model* D3D12HelloTriangle::LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups)
- {
-	 Model model;
-	 model.m_name = name;
-	 if (resManager->GetModel(name) == nullptr) {
-		LoadModelRecursive(model.m_name, &model);
-		 for (auto& hitGroup : hitGroups) {
-			 model.m_hitGroups.push_back(hitGroup);
-		 }
-		 resManager->RegisterModel(model.m_name, model);
-	 }
-	// DISCUSSION - THIS WAY WE WON'T BE ABLE TO HAVE DIFFERENT SHADER GROUPS FOR THE SAME MODELS
-	// DO WE WANT THIS? WHEN WILL WE USE THIS?
-	return resManager->GetModel(name);
- }
- XMMATRIX D3D12HelloTriangle::GlmToXM_mat4(glm::mat4 gmat) {
-	 XMMATRIX xmat;
-	 const glm::mat4& mat = gmat;
-	 memcpy(&xmat.r->m128_f32[0], glm::value_ptr(mat), 16 * sizeof(float));
-	 return xmat;
- }
- void D3D12HelloTriangle::MakeTestScene()
- {
-	
-	 GameObject a, b, c;
-	
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
 
-	 a.m_transform = glm::scale(glm::vec3(1.f));
-	 b.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(2.f, 20.f, 0.f));
-	 c.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(1.f, 0.f, 0.f));
-
-	 m_myScene.m_sceneObjects.clear();
-	 m_myScene.AddGameObject(a);
-	 m_myScene.AddGameObject(b);
-	 m_myScene.AddGameObject(c);
-	 UploadScene(&m_myScene);
- }
- void D3D12HelloTriangle::MakeTestScene1()
- {
-	 GameObject a, b, c, d;
-	 Model am, bm, cm, dm;
-
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-
-	 a.m_transform = glm::scale(glm::vec3(0.04f));
-	 b.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));
-	 c.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(1.f, 20.f, 0.f));
-	 d.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(-1.f, 0.f, 0.f));
-
-	 m_myScene1.m_sceneObjects.clear();
-	 m_myScene1.AddGameObject(a);
-	 m_myScene1.AddGameObject(b);
-	 m_myScene1.AddGameObject(c);
-	 m_myScene1.AddGameObject(d);
-	 UploadScene(&m_myScene1);
- }
  void D3D12HelloTriangle::BuildModelRecursive(tinygltf::Model& model, Model* modelData, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
 	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum) {
 	 HRESULT hr = S_OK;
@@ -964,7 +798,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 // transform GLTF vector with 16 values to GLM mat4
 			 XMMATRIX nodeMat = nv_helpers_dx12::ConvertGLTFMatrixToXMMATRIX(&glTFNode.matrix[0]);
 			 // apply parent-child matrix transform
-			 modelSpaceTrans =  parentMat * nodeMat;
+			 modelSpaceTrans = parentMat * nodeMat;
 		 }
 		 else {
 			 XMMATRIX trMat = XMMatrixIdentity();
@@ -989,7 +823,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 memcpy(pData, &modelSpaceTrans, sizeof(XMMATRIX));
 		 transBuffer->Unmap(0, nullptr);
 	 }
-	// Build Primitive data
+	 // Build Primitive data
 	 {
 		 if (hasMesh) {
 			 auto& mesh = model.meshes[glTFNode.mesh];
@@ -1018,32 +852,32 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 std::vector<UINT> indexData;
 				 switch (indexAccessor.componentType) {
 				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-					 {
-						 const UINT8* indexLoadData8 = reinterpret_cast<const UINT8*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-						 for (int i = 0; i < indexAccessor.count; i++) {
-							 UINT id = indexLoadData8[i];
-							 indexData.push_back(id);
-						 }
+				 {
+					 const UINT8* indexLoadData8 = reinterpret_cast<const UINT8*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+					 for (int i = 0; i < indexAccessor.count; i++) {
+						 UINT id = indexLoadData8[i];
+						 indexData.push_back(id);
 					 }
-					 break;
+				 }
+				 break;
 				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-					 {
-						 const UINT16* indexLoadData16 = reinterpret_cast<const UINT16*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-						 for (int i = 0; i < indexAccessor.count; i++) {
-							 UINT id = indexLoadData16[i];
-							 indexData.push_back(id);
-						 }
+				 {
+					 const UINT16* indexLoadData16 = reinterpret_cast<const UINT16*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+					 for (int i = 0; i < indexAccessor.count; i++) {
+						 UINT id = indexLoadData16[i];
+						 indexData.push_back(id);
 					 }
-					 break;
+				 }
+				 break;
 				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-					 {
-						 const UINT32* indexLoadData32 = reinterpret_cast<UINT32*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-						 for (int i = 0; i < indexAccessor.count; i++) {
-							 UINT id = indexLoadData32[i];
-							 indexData.push_back(id);
-						 }
+				 {
+					 const UINT32* indexLoadData32 = reinterpret_cast<UINT32*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+					 for (int i = 0; i < indexAccessor.count; i++) {
+						 UINT id = indexLoadData32[i];
+						 indexData.push_back(id);
 					 }
-					 break;
+				 }
+				 break;
 				 }
 				 modelVertexAndNum.back().second = vertexAccessor.count;
 				 modelIndexAndNum.back().second = indexAccessor.count;
@@ -1097,7 +931,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(UINT));
 			 }
 		 }
-		
+
 	 }
 
 	 // continue with node's children (we pass paren's model matrix to get the correct transform for children)
@@ -1105,3 +939,71 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 BuildModelRecursive(model, modelData, glTFNode.children[i], modelSpaceTrans, transforms, modelVertexAndNum, modelIndexAndNum);
 	 }
  }
+ // Move to model?
+ Model* D3D12HelloTriangle::LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups)
+ {
+	 Model model;
+	 model.m_name = name;
+	 if (resManager->GetModel(name) == nullptr) {
+		LoadModelRecursive(model.m_name, &model);
+		 for (auto& hitGroup : hitGroups) {
+			 model.m_hitGroups.push_back(hitGroup);
+		 }
+		 resManager->RegisterModel(model.m_name, model);
+	 }
+	// DISCUSSION - THIS WAY WE WON'T BE ABLE TO HAVE DIFFERENT SHADER GROUPS FOR THE SAME MODELS
+	// DO WE WANT THIS? WHEN WILL WE USE THIS?
+	return resManager->GetModel(name);
+ }
+ // Move this to helper?
+ XMMATRIX D3D12HelloTriangle::GlmToXM_mat4(glm::mat4 gmat) {
+	 XMMATRIX xmat;
+	 const glm::mat4& mat = gmat;
+	 memcpy(&xmat.r->m128_f32[0], glm::value_ptr(mat), 16 * sizeof(float));
+	 return xmat;
+ }
+ // Gameplay code simulation------------------------------
+ void D3D12HelloTriangle::MakeTestScene()
+ {
+	
+	 GameObject a, b, c;
+	
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+
+	 a.m_transform = glm::scale(glm::vec3(1.f));
+	 b.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(2.f, 20.f, 0.f));
+	 c.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(1.f, 0.f, 0.f));
+
+	 m_myScene.m_sceneObjects.clear();
+	 m_myScene.AddGameObject(a);
+	 m_myScene.AddGameObject(b);
+	 m_myScene.AddGameObject(c);
+	 UploadScene(&m_myScene);
+ }
+ void D3D12HelloTriangle::MakeTestScene1()
+ {
+	 GameObject a, b, c, d;
+	 Model am, bm, cm, dm;
+
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+
+	 a.m_transform = glm::scale(glm::vec3(0.04f));
+	 b.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));
+	 c.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(1.f, 20.f, 0.f));
+	 d.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(-1.f, 0.f, 0.f));
+
+	 m_myScene1.m_sceneObjects.clear();
+	 m_myScene1.AddGameObject(a);
+	 m_myScene1.AddGameObject(b);
+	 m_myScene1.AddGameObject(c);
+	 m_myScene1.AddGameObject(d);
+	 UploadScene(&m_myScene1);
+ }
+ // ------------------------------------------------------

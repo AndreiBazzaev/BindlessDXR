@@ -55,7 +55,9 @@ private:
 	int m_requestedScene = 0;
 	Scene m_myScene1;
 	ResourceManager m_resourceManager;
-	// 
+
+	void SwitchScenes();
+	// -----------------------------------
 	static const UINT FrameCount = 2;
 	struct Normal
 	{
