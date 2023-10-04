@@ -68,4 +68,6 @@ ConstantBuffer<RenderModeStruct> renderMode : register(b0, space1);
 	// 6 - occlusion
 	// 7 - orm
 	// 8 - normal map 
-	// 9 - emissive
+	// 9 - world space normals 
+	// 10 - emissive
+	// 11 - basecolor + shadows

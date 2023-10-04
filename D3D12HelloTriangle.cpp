@@ -122,7 +122,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// using the [shader("xxx")] syntax
 	pipeline.AddLibrary(m_rayGenLibrary.Get(), { L"RayGen" });
 	pipeline.AddLibrary(m_missLibrary.Get(), { L"Miss" });
-	pipeline.AddLibrary(m_hitLibrary.Get(), { L"ClosestHit", L"PlaneClosestHit"});
+	pipeline.AddLibrary(m_hitLibrary.Get(), { L"ClosestHit", L"ShadedClosestHit"});
 
 	// To be used, each DX12 shader needs a root signature defining which
 	// parameters and buffers will be accessed.
@@ -134,7 +134,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// Hit group for the triangles, with a shader simply interpolating vertex
 	// colors
 	pipeline.AddHitGroup(L"HitGroup", L"ClosestHit");
-	pipeline.AddHitGroup(L"PlaneHitGroup", L"PlaneClosestHit");
+	pipeline.AddHitGroup(L"ShadedHitGroup", L"ShadedClosestHit");
 	pipeline.AddHitGroup(L"ShadowHitGroup", L"ShadowClosestHit");
 	// The following section associates the root signature to each shader. Note
  // that we can explicitly show that some shaders share the same root signature
@@ -142,14 +142,12 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
  // to as hit groups, meaning that the underlying intersection, any-hit and
  // closest-hit shaders share the same root signature.
 	pipeline.AddRootSignatureAssociation(m_rayGenSignature.Get(), { L"RayGen" });
-	pipeline.AddRootSignatureAssociation(m_missSignature.Get(), { L"Miss" });
-	pipeline.AddRootSignatureAssociation(m_hitSignature.Get(), { L"HitGroup" });
 	pipeline.AddRootSignatureAssociation(m_shadowSignature.Get(),
 		{ L"ShadowHitGroup" });
 	pipeline.AddRootSignatureAssociation(m_missSignature.Get(),
 		{ L"Miss", L"ShadowMiss" });
 	pipeline.AddRootSignatureAssociation(m_hitSignature.Get(),
-		{ L"HitGroup", L"PlaneHitGroup" });
+		{ L"HitGroup", L"ShadedHitGroup" });
 
 
 
@@ -385,7 +383,7 @@ void D3D12HelloTriangle::OnUpdate()
 	m_time++;
 	std::get<1>(m_instances[0]) = XMMatrixScaling(1.0003f, 1.0003f, 1.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
 	//std::get<1>(m_instances[1]) = XMMatrixScaling(0.04f, 0.04f, 0.04f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
-	std::get<1>(m_instances[2]) = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f) +0.5f, 0.f);
+	std::get<1>(m_instances[2]) = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f) + 0.5f, 0.f);
 	/*
 	std::get<1>(m_instances[3]) = XMMatrixScaling(0.003f, 0.00001f, 0.003f) * XMMatrixTranslation(0.f, - 1.f, 0.f);
 	std::get<1>(m_instances[4]) = XMMatrixScaling(0.0006f, 0.0006f, 0.0006f);*/
@@ -864,13 +862,13 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 /*
 				 -------Primitive in heap---------
 				 Material
+				 Transform
 				 Positions
 				 Normals  (optional)
 				 Tangents (optional)
 				 Colors   (optional)
 				 TexCoords (optional)
 				 Indexes
-				 Transform
 				 */
 				
 				 //
@@ -919,6 +917,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 								 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(MaterialStruct)));
 					 }
 				 }
+				 // Upload Transform to Heap
+				 nv_helpers_dx12::CreateBufferView(m_device.Get(), transBuffer.Get(), transBuffer->GetGPUVirtualAddress(),
+					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMMATRIX));
 				 // Upload Positions to Heap
 				 nv_helpers_dx12::CreateBufferView(m_device.Get(), modelVertexAndNum.back().first.Get(), modelVertexAndNum.back().first->GetGPUVirtualAddress(),
 					 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT3));
@@ -1451,9 +1452,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
  {
 	
 	 GameObject a, b, c;
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
 	// b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
@@ -1471,10 +1472,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 GameObject a, b, c, d;
 	 Model am, bm, cm, dm;
 
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(0.04f));
 	 b.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));
