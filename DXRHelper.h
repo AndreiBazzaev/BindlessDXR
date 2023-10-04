@@ -16,7 +16,7 @@
 namespace nv_helpers_dx12
 {
     enum BufferType {
-        CBV, SRV_BUFFER, UAV, AS
+        CBV, SRV_BUFFER, UAV, AS, TEXTURE
 };
 //--------------------------------------------------------------------------------------------------
 //
@@ -43,7 +43,28 @@ inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
                                                   initState, nullptr, IID_PPV_ARGS(&pBuffer)));
   return pBuffer;
 }
+inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint64_t width, uint64_t height, DXGI_FORMAT format,
+    D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initState,
+    const D3D12_HEAP_PROPERTIES& heapProps)
+{
+    D3D12_RESOURCE_DESC bufDesc = {};
+    bufDesc.Alignment = 0;
+    bufDesc.DepthOrArraySize = 1;
+    bufDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    bufDesc.Flags = flags;
+    bufDesc.Format = format;
+    bufDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    bufDesc.MipLevels = 1;
+    bufDesc.SampleDesc.Count = 1;
+    bufDesc.SampleDesc.Quality = 0;
+    bufDesc.Width = width;
+    bufDesc.Height = height;
 
+    ID3D12Resource* pBuffer;
+    ThrowIfFailed(m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
+        initState, nullptr, IID_PPV_ARGS(&pBuffer)));
+    return pBuffer;
+}
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
@@ -67,6 +88,18 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
             srvDesc.Buffer.FirstElement = 0;
             srvDesc.Buffer.StructureByteStride = stride;
             srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            device->CreateShaderResourceView(resource, &srvDesc, handleRef);
+            break;
+        }
+        case TEXTURE: {
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
+            srvDesc.Format = resource->GetDesc().Format;
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Texture2D.MipLevels = resource->GetDesc().MipLevels;
+            srvDesc.Texture2D.MostDetailedMip = 0; 
+            srvDesc.Texture2D.PlaneSlice = 0; 
+            srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
             device->CreateShaderResourceView(resource, &srvDesc, handleRef);
             break;
         }

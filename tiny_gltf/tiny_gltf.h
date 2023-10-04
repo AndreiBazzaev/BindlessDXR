@@ -93,7 +93,7 @@
 #define TINYGLTF_NOEXCEPT noexcept
 #endif
 
-#define TINYGLTF_NO_EXTERNAL_IMAGE
+//#define TINYGLTF_NO_EXTERNAL_IMAGE
 
 #define DEFAULT_METHODS(x)             \
   ~x() = default;                      \

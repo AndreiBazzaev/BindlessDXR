@@ -66,16 +66,61 @@ private:
 		XMFLOAT3 position;
 	};
 	// ---- New Model Loading------
-	struct PrimStruct {
-		UINT primStartIndex;
-	};
+
 	struct MaterialStruct {
 		UINT hasNormals;
 		UINT hasTangents;
 		UINT hasColors;
 		UINT hasTexcoords;
 
+		UINT alphaMode; // 0 - "OPAQUE", 1 - "MASK", 2 - "BLEND"
+		FLOAT alphaCutoff; // default 0.5
+		UINT doubleSided;
+
+		INT baseTextureIndex; // Index in heap
+		INT baseTextureSamplerIndex; // Index in heap
+		UINT texCoordIdBase;
+		XMFLOAT4 baseColor;
+
+		INT metallicRoughnessTextureIndex;
+		INT metallicRoughnessTextureSamplerIndex;
+		UINT texCoordIdMR;
+		FLOAT metallicFactor;
+		FLOAT roughnessFactor;
+
+
+		INT occlusionTextureIndex;
+		INT occlusionTextureSamplerIndex;
+		UINT texCoordIdOcclusion;
+		FLOAT strengthOcclusion; // look into tiny_gltf.h for formula
+
+		INT normalTextureIndex;
+		INT normalTextureSamplerIndex;
+		UINT texCoordIdNorm;
+		FLOAT scaleNormal; // look into tiny_gltf.h for formula
+
+		INT emissiveTextureIndex;
+		INT emissiveTextureSamplerIndex;
+		UINT texCoordIdEmiss;
+		XMFLOAT3 emisiveFactor;
+
 	};
+	void FillInfoPBR(tinygltf::Model& model, tinygltf::Primitive& prim, MaterialStruct* material, std::vector<uint32_t>& imageHeapIds);
+	void LoadImageData(tinygltf::Model& model, std::vector<uint32_t>& imageHeapIds);
+	uint32_t m_renderMode = 0;
+	uint32_t m_numRenderModes = 10;
+	// For now render modes
+	// 0 - vertex colors
+	// 1 - vertex normals
+	// 2 - base color
+	// 3 - metallic 
+	// 4 - roughness
+	// 5 - metallic roughness
+	// 6 - occlusion
+	// 7 - orm
+	// 8 - normal map 
+	// 9 - emissive
+	//----------------------------
 	// Pipeline objects.
 	CD3DX12_VIEWPORT m_viewport;
 	CD3DX12_RECT m_scissorRect;
@@ -152,7 +197,15 @@ private:
 	ComPtr<ID3D12DescriptorHeap> m_CbvSrvUavHeap;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_CbvSrvUavHandle;
 	uint32_t m_CbvSrvUavIndex = 0;
-	void CreateShaderResourceHeap(); 
+
+	ComPtr<ID3D12DescriptorHeap> m_SamplerHeap;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_SamplerHandle;
+	uint32_t m_SamplerIndex = 0;
+
+	void CreatHeaps();
+	// Create all possible variations of GLTF texture samplers
+	void FillInSamplerHeap();
+	uint32_t GetSamplerHeapIndexFromGLTF(tinygltf::Sampler& sampler);
 	// ---------RESOURCES FOR SHADER PASS------------------------------
 	void CreateRaytracingOutputBuffer();
 	ComPtr<ID3D12Resource> m_outputResource; // similar to rtv in #RTX. Shaders write to this buffer
@@ -179,7 +232,8 @@ private:
 	ComPtr<ID3D12RootSignature> m_shadowSignature;
 	// MODEL LOADING
 	void BuildModelRecursive(tinygltf::Model& model, Model* modelData, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
-		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum, std::vector<uint32_t>& primitiveIndexes);
+		std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum,
+		std::vector<uint32_t>& primitiveIndexes, std::vector<uint32_t>& imageHeapIds);
 	XMMATRIX GlmToXM_mat4(glm::mat4 gmat);
 	// Bindless
 	std::vector<uint32_t> m_AllHeapIndices;

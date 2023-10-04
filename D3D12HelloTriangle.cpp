@@ -28,6 +28,7 @@
 #include <iostream>
 #include <locale>
 #include <codecvt>
+#include "stb_image/stb_image.h"
 D3D12HelloTriangle::D3D12HelloTriangle(UINT width, UINT height, std::wstring name) :
 	DXSample(width, height, name),
 	m_frameIndex(0),
@@ -49,11 +50,13 @@ void D3D12HelloTriangle::OnInit()
 	// #RTX---------------------------------------------------------------
 	// Check the raytracing capabilities of the device 
 	CheckRaytracingSupport();
-	CreateShaderResourceHeap();
+	CreatHeaps();
+	FillInSamplerHeap();
 	// Allocate the buffer for output #RTX image
 	CreateRaytracingOutputBuffer();
 	//ThrowIfFailed(m_commandList->Close());
 	CreateRaytracingPipeline();
+
 	// Camera
 	nv_helpers_dx12::CameraManip.setWindowSize(GetWidth(), GetHeight());
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
@@ -83,6 +86,8 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateGlobalSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
 	// List of all heap indexes
 	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0, 1);
+	// Render mode
+	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, 0, 1);
 	return rsc.Generate(m_device.Get(), false);
 }
 
@@ -199,9 +204,12 @@ void D3D12HelloTriangle::CreateRaytracingOutputBuffer() {
 			m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::UAV);
 }
 // --------- Create CBV SRV UAV heap
-void D3D12HelloTriangle::CreateShaderResourceHeap() { 
+void D3D12HelloTriangle::CreatHeaps() { 
 	m_CbvSrvUavHeap = nv_helpers_dx12::CreateDescriptorHeap( m_device.Get(), 65536, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, true); 
 	m_CbvSrvUavHandle = m_CbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+
+	m_SamplerHeap = nv_helpers_dx12::CreateDescriptorHeap(m_device.Get(), 1000, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, true);
+	m_SamplerHandle = m_SamplerHeap->GetCPUDescriptorHandleForHeapStart();
 }
 // --------- For a particular scene recreate an SBT - shader + resource bindings for each BLAS
 void D3D12HelloTriangle::ReCreateShaderBindingTable(Scene* scene) {
@@ -376,8 +384,8 @@ void D3D12HelloTriangle::OnUpdate()
 	// ANIMATE 
 	m_time++;
 	std::get<1>(m_instances[0]) = XMMatrixScaling(1.0003f, 1.0003f, 1.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
-	std::get<1>(m_instances[1]) = XMMatrixScaling(0.04f, 0.04f, 0.04f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
-	std::get<1>(m_instances[2]) = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f), 0.f);
+	//std::get<1>(m_instances[1]) = XMMatrixScaling(0.04f, 0.04f, 0.04f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
+	std::get<1>(m_instances[2]) = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f) +0.5f, 0.f);
 	/*
 	std::get<1>(m_instances[3]) = XMMatrixScaling(0.003f, 0.00001f, 0.003f) * XMMatrixTranslation(0.f, - 1.f, 0.f);
 	std::get<1>(m_instances[4]) = XMMatrixScaling(0.0006f, 0.0006f, 0.0006f);*/
@@ -412,8 +420,20 @@ void D3D12HelloTriangle::OnDestroy()
 // Switches Active Scenes
 void D3D12HelloTriangle::OnKeyUp(UINT8 key)
 { 
-	m_requestedScene += 1;
-	m_requestedScene = m_requestedScene % 2;
+	if (key == VK_SPACE) {
+		m_requestedScene += 1;
+		m_requestedScene = m_requestedScene % 2;
+	}
+	if (key == VK_LEFT) {
+		m_renderMode -= 1;
+		if (m_renderMode < 0)
+			m_renderMode = m_numRenderModes - 1;
+	}
+	if (key == VK_RIGHT) {
+		m_renderMode += 1;
+		if (m_renderMode >= m_numRenderModes)
+			m_renderMode = 0;
+	}
 }
 void D3D12HelloTriangle::PopulateCommandList()
 {
@@ -433,7 +453,7 @@ void D3D12HelloTriangle::PopulateCommandList()
 	
 	CreateTopLevelAS(m_instances, true); // Update TLAS for Animations
 	
-	std::vector<ID3D12DescriptorHeap*> heaps = { m_CbvSrvUavHeap.Get() };
+	std::vector<ID3D12DescriptorHeap*> heaps = { m_CbvSrvUavHeap.Get(), m_SamplerHeap.Get()};
 	m_commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
 
 	// Set global RS
@@ -469,6 +489,7 @@ void D3D12HelloTriangle::PopulateCommandList()
 
 	// Heap indexes for Bindless rendering
 	m_commandList->SetComputeRootShaderResourceView(0, m_HeapIndexBuffer.Get()->GetGPUVirtualAddress());
+	m_commandList->SetComputeRoot32BitConstant(1, m_renderMode, 0);
 	// ----------DRAWING ------------------------------------------
 	// Dispatch the rays and write to the raytracing output
 	m_commandList->DispatchRays(&desc);
@@ -679,6 +700,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 std::vector <std::pair<ComPtr<ID3D12Resource>, uint32_t>> modelIndexAndNum;
 	 std::vector <ComPtr<ID3D12Resource >> transforms;
 	 std::vector<uint32_t> primitiveIndexes = { 0 };
+	 std::vector<uint32_t> imageIndexes;
 
 	 // The first data for the model - its primitive indexes buffer
 	  // Update Primitive Buffer according to the new data
@@ -689,16 +711,19 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 ThrowIfFailed(primBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pPrimiBegin)));
 	 memcpy(pPrimiBegin, &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
 	 primBuffer->Unmap(0, nullptr);
-	 // ---------------Heap Upload------------------------
+	 // -------------Primitive Heap Upload------------------------
 	 model->m_heapPointer = nv_helpers_dx12::CreateBufferView(m_device.Get(), primBuffer.Get(),primBuffer->GetGPUVirtualAddress(),
 		 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(uint32_t));
 	 primitiveIndexes.clear();
+	 //----------------------------------------------------
+	 // ---------------Load Images To Heap--------------------
+	 LoadImageData(m_TestModel, imageIndexes);
 	 // ---------------Upload model data to GPU
 	 auto& scene = m_TestModel.scenes[m_TestModel.defaultScene];
 	 for (size_t i = 0; i < scene.nodes.size(); i++) {
-		 BuildModelRecursive(m_TestModel, model, scene.nodes[i], XMMatrixIdentity(), transforms, modelVertexAndNum, modelIndexAndNum, primitiveIndexes);
+		 BuildModelRecursive(m_TestModel, model, scene.nodes[i], XMMatrixIdentity(), transforms, modelVertexAndNum, modelIndexAndNum, primitiveIndexes, imageIndexes);
 	 }
-
+	 
 	 // --------Update Primitive Buffer according to the new data
 	 ComPtr<ID3D12Resource> newPrimBuffer;
 	 newPrimBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
@@ -717,7 +742,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
 
  void D3D12HelloTriangle::BuildModelRecursive(tinygltf::Model& model, Model* modelData, uint64_t nodeIndex, XMMATRIX parentMat, std::vector <ComPtr<ID3D12Resource >>& transforms,
-	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum, std::vector<uint32_t>& primitiveIndexes) {
+	 std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelVertexAndNum, std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>>& modelIndexAndNum, 
+	 std::vector<uint32_t>& primitiveIndexes, std::vector<uint32_t>& imageHeapIds) {
 	 HRESULT hr = S_OK;
 	 // get the needed node
 	 auto& glTFNode = model.nodes[nodeIndex];
@@ -787,33 +813,33 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
 				 std::vector<UINT> indexData;
 				 switch (indexAccessor.componentType) {
-				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-				 {
-					 const UINT8* indexLoadData8 = reinterpret_cast<const UINT8*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-					 for (int i = 0; i < indexAccessor.count; i++) {
-						 UINT id = indexLoadData8[i];
-						 indexData.push_back(id);
+					 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					 {
+						 const UINT8* indexLoadData8 = reinterpret_cast<const UINT8*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+						 for (int i = 0; i < indexAccessor.count; i++) {
+							 UINT id = indexLoadData8[i];
+							 indexData.push_back(id);
+						 }
 					 }
-				 }
-				 break;
-				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-				 {
-					 const UINT16* indexLoadData16 = reinterpret_cast<const UINT16*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-					 for (int i = 0; i < indexAccessor.count; i++) {
-						 UINT id = indexLoadData16[i];
-						 indexData.push_back(id);
+					 break;
+					 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					 {
+						 const UINT16* indexLoadData16 = reinterpret_cast<const UINT16*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+						 for (int i = 0; i < indexAccessor.count; i++) {
+							 UINT id = indexLoadData16[i];
+							 indexData.push_back(id);
+						 }
 					 }
-				 }
-				 break;
-				 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-				 {
-					 const UINT32* indexLoadData32 = reinterpret_cast<UINT32*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
-					 for (int i = 0; i < indexAccessor.count; i++) {
-						 UINT id = indexLoadData32[i];
-						 indexData.push_back(id);
+					 break;
+					 case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					 {
+						 const UINT32* indexLoadData32 = reinterpret_cast<UINT32*>(&model.buffers[indexBufferView.buffer].data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+						 for (int i = 0; i < indexAccessor.count; i++) {
+							 UINT id = indexLoadData32[i];
+							 indexData.push_back(id);
+						 }
 					 }
-				 }
-				 break;
+					 break;
 				 }
 				 modelVertexAndNum.back().second = vertexAccessor.count;
 				 modelIndexAndNum.back().second = indexAccessor.count;
@@ -853,27 +879,31 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 {
 					 // Check which model data we have
 					 {
-					 // -----------------Normals --------------------------
-					 if (prim.attributes.find("NORMAL") != prim.attributes.end())
-						 primMat.hasNormals = 1;
-					 else
-						 primMat.hasNormals = 0;
-					 // -----------------Tangents --------------------------
-					 if (prim.attributes.find("TANGENT") != prim.attributes.end())
-						 primMat.hasTangents = 1;
-					 else
-						 primMat.hasTangents = 0;
-					 // -----------------Colors --------------------------
-					 if (prim.attributes.find("COLOR_0") != prim.attributes.end())
-						 primMat.hasColors = 1;
-					 else
-						 primMat.hasColors = 0;
-					 // -----------------Texcoords --------------------------
-					 if (prim.attributes.find("TEXCOORD_0") != prim.attributes.end())
-						 primMat.hasTexcoords = 1;
-					 else
-						 primMat.hasTexcoords = 0; 
+						 // -----------------Normals --------------------------
+						 if (prim.attributes.find("NORMAL") != prim.attributes.end())
+							 primMat.hasNormals = 1;
+						 else
+							 primMat.hasNormals = 0;
+						 // -----------------Tangents --------------------------
+						 if (prim.attributes.find("TANGENT") != prim.attributes.end())
+							 primMat.hasTangents = 1;
+						 else
+							 primMat.hasTangents = 0;
+						 // -----------------Colors --------------------------
+						 if (prim.attributes.find("COLOR_0") != prim.attributes.end())
+							 primMat.hasColors = 1;
+						 else
+							 primMat.hasColors = 0;
+						 // -----------------Texcoords --------------------------
+						 // we will cover a wide range of texture coords
+						 primMat.hasTexcoords = 0;
+						 for (int i = 0; i < 10; i++) {
+							 std::string name = "TEXCOORD_" + std::to_string(i);
+							 if (prim.attributes.find(name.c_str()) != prim.attributes.end())
+								 primMat.hasTexcoords += 1;
+						 }
 					 }
+					 FillInfoPBR(model, prim, &primMat, imageHeapIds);
 					 //----------------Create material Buffer + Push to Heap-----------------------
 					 {
 						 ComPtr<ID3D12Resource> newMatBuffer;
@@ -952,9 +982,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 					 //------------------------------------------------------
 
 					 // -----------------Texcoords --------------------------
-					 if (primMat.hasTexcoords == 1) {
+					 for (int i = 0; i < primMat.hasTexcoords; i++) {
 						 ComPtr<ID3D12Resource> newTexcoordBuffer;
-						 const tinygltf::Accessor& texcoordAccessor = model.accessors[prim.attributes.at("TEXCOORD_0")];
+						 std::string name = "TEXCOORD_" + std::to_string(i);
+						 const tinygltf::Accessor& texcoordAccessor = model.accessors[prim.attributes.at(name.c_str())];
 						 const tinygltf::BufferView& texcoordBufferView = model.bufferViews[texcoordAccessor.bufferView];
 						 UINT texcoordDataSize = texcoordAccessor.count * texcoordAccessor.ByteStride(texcoordBufferView);
 						 const float* texcoordData = reinterpret_cast<const float*>(&model.buffers[texcoordBufferView.buffer].data[texcoordBufferView.byteOffset + texcoordAccessor.byteOffset]);
@@ -980,8 +1011,221 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
 	 // continue with node's children (we pass paren's model matrix to get the correct transform for children)
 	 for (size_t i = 0; i < glTFNode.children.size(); i++) {
-		 BuildModelRecursive(model, modelData, glTFNode.children[i], modelSpaceTrans, transforms, modelVertexAndNum, modelIndexAndNum, primitiveIndexes);
+		 BuildModelRecursive(model, modelData, glTFNode.children[i], modelSpaceTrans, transforms, modelVertexAndNum, modelIndexAndNum, primitiveIndexes, imageHeapIds);
 	 }
+ }
+ 
+ void D3D12HelloTriangle::LoadImageData(tinygltf::Model& model, std::vector<uint32_t>& imageHeapIds) {
+	 for (auto& image : model.images) {
+		 ComPtr<ID3D12Resource> texture;
+		 // check format - we later should be able to know if it is SRBB or not, idk how
+		 DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		 switch (image.component) {
+			 case(1):
+				 if (image.bits == 8)
+					 format = DXGI_FORMAT_R8_UNORM;
+				 if (image.bits == 16)
+					 format = DXGI_FORMAT_R16_UNORM;
+				 if (image.bits == 32)
+					 format = DXGI_FORMAT_R32_UINT;
+				 break;
+			 case(2):
+				 if (image.bits == 8)
+					 format = DXGI_FORMAT_R8G8_UNORM;
+				 if (image.bits == 16)
+					 format = DXGI_FORMAT_R16G16_UNORM;
+				 if (image.bits == 32)
+					 format = DXGI_FORMAT_R32G32_UINT;
+				 break;
+			 case(3):
+				 if (image.bits == 32)
+					 format = DXGI_FORMAT_R32G32B32_UINT;
+				 break;
+			 case(4):
+				 if (image.bits == 8)
+					 format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				 if (image.bits == 16)
+					 format = DXGI_FORMAT_R16G16B16A16_UNORM;
+				 if (image.bits == 32)
+					 format = DXGI_FORMAT_R32G32B32A32_UINT;
+				 break;
+		 }
+		 //uint32_t imageSize = image.width * image.height * image.component * image.bits / 8;
+		 texture = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, nv_helpers_dx12::kDefaultHeapProps);
+
+		 // questionable if I need an upload buffer here
+		 // COPY TEXTURE BUFFER
+		 {
+			 // create a footprint  for the texture to know its properties
+			 D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
+			 UINT rowCount;
+			 UINT64 rowSize;
+			 UINT64 size;
+			 m_device->GetCopyableFootprints(&texture->GetDesc(), 0, 1, 0,
+				 &footprint, &rowCount, &rowSize, &size);
+			 ComPtr<ID3D12Resource> textureUploader;
+			 textureUploader = nv_helpers_dx12::CreateBuffer(m_device.Get(), size, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+			 UINT8* pTextureDataBegin;
+			 CD3DX12_RANGE readRange(0, 0);
+			 ThrowIfFailed(textureUploader->Map(0, &readRange, reinterpret_cast<void**>(&pTextureDataBegin)));
+
+			 int properRowPitch = rowSize;
+			 if (properRowPitch <= 256)
+				 properRowPitch = 256;
+			 else if (properRowPitch % 256 != 0)
+				 properRowPitch = properRowPitch + (256 - properRowPitch % 256);
+
+			 for (UINT i = 0; i != rowCount; ++i) {
+				 memcpy(static_cast<uint8_t*>(pTextureDataBegin) + properRowPitch * i,
+					 &image.image[0] + image.width * image.component * i,
+					 image.width * image.component);
+			 }
+			 D3D12_TEXTURE_COPY_LOCATION dstCopyLocation = {};
+			 dstCopyLocation.pResource = texture.Get();
+			 dstCopyLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+			 dstCopyLocation.SubresourceIndex = 0;
+
+			 D3D12_TEXTURE_COPY_LOCATION srcCopyLocation = {};
+			 srcCopyLocation.pResource = textureUploader.Get();
+			 srcCopyLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+			 srcCopyLocation.PlacedFootprint = footprint;
+
+			 m_commandList->CopyTextureRegion(&dstCopyLocation, 0, 0, 0,
+				 &srcCopyLocation, nullptr);
+			 textureUploader->Unmap(0, nullptr);
+
+		 }
+		 imageHeapIds.push_back(nv_helpers_dx12::CreateBufferView(m_device.Get(), texture.Get(), NULL,
+			 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::TEXTURE));
+	 }
+ }
+ void D3D12HelloTriangle::FillInfoPBR(tinygltf::Model& model, tinygltf::Primitive& prim, MaterialStruct* material, std::vector<uint32_t>& imageHeapIds) {
+
+	 tinygltf::Material materialGLTF = model.materials[prim.material];
+
+	 material->alphaCutoff = FLOAT(materialGLTF.alphaCutoff);
+	 if (materialGLTF.alphaMode == "OPAQUE")
+		 material->alphaMode = 0;
+	 if (materialGLTF.alphaMode == "MASK")
+		 material->alphaMode = 1;
+	 if (materialGLTF.alphaMode == "BLEND")
+		 material->alphaMode = 2;
+	 material->doubleSided = UINT(materialGLTF.doubleSided);
+
+	 // TEXTURE DATA
+	 //----BASE COLOR----------------
+	 {
+		 // get GLTF index
+		 int textureIndexGLTF = materialGLTF.pbrMetallicRoughness.baseColorTexture.index;
+		 if (textureIndexGLTF >= 0) {
+			 // make it into heap index
+			 material->baseTextureIndex = imageHeapIds[model.textures[textureIndexGLTF].source];
+			 // get GLTF index
+			 material->baseTextureSamplerIndex = model.textures[textureIndexGLTF].sampler;
+			 // make it heap index
+			 material->baseTextureSamplerIndex = GetSamplerHeapIndexFromGLTF(model.samplers[material->baseTextureSamplerIndex]);
+		 }
+		 else {
+			 // ADD DEFAULT TEXTURE LOADING => HERE ASSIGN DEFAULT TEXTUES
+			 material->baseTextureIndex = -1;
+			 material->baseTextureSamplerIndex = -1;
+		 }
+		 material->texCoordIdBase = materialGLTF.pbrMetallicRoughness.baseColorTexture.texCoord;
+		 material->baseColor = XMFLOAT4{
+		 FLOAT(materialGLTF.pbrMetallicRoughness.baseColorFactor[0]),
+		 FLOAT(materialGLTF.pbrMetallicRoughness.baseColorFactor[1]),
+		 FLOAT(materialGLTF.pbrMetallicRoughness.baseColorFactor[2]),
+		 FLOAT(materialGLTF.pbrMetallicRoughness.baseColorFactor[3]) };
+	 }
+	 //---Metallic Roughness---------------------
+	 {
+		 // get GLTF index
+		 int textureIndexGLTF = materialGLTF.pbrMetallicRoughness.metallicRoughnessTexture.index;
+		 if (textureIndexGLTF >= 0) {
+			 // make it into heap index
+			 material->metallicRoughnessTextureIndex = imageHeapIds[model.textures[textureIndexGLTF].source];
+			 // get GLTF index
+			 material->metallicRoughnessTextureSamplerIndex = model.textures[textureIndexGLTF].sampler;
+			 // make it heap index
+			 material->metallicRoughnessTextureSamplerIndex = GetSamplerHeapIndexFromGLTF(model.samplers[material->metallicRoughnessTextureSamplerIndex]);
+		 }
+		 else {
+			 // ADD DEFAULT TEXTURE LOADING => HERE ASSIGN DEFAULT TEXTUES
+			 material->metallicRoughnessTextureIndex = -1;
+			 material->metallicRoughnessTextureSamplerIndex = -1;
+		 }
+		 material->texCoordIdMR = materialGLTF.pbrMetallicRoughness.metallicRoughnessTexture.texCoord;
+		 material->metallicFactor = FLOAT(materialGLTF.pbrMetallicRoughness.metallicFactor);
+		 material->roughnessFactor = FLOAT(materialGLTF.pbrMetallicRoughness.roughnessFactor);
+	 }
+
+	//----OCCLUSION------------------------------
+	 {
+		 // get GLTF index
+		 int textureIndexGLTF = materialGLTF.occlusionTexture.index;
+		 if (textureIndexGLTF >= 0) {
+			 // make it into heap index
+			 material->occlusionTextureIndex = imageHeapIds[model.textures[textureIndexGLTF].source];
+			 // get GLTF index
+			 material->occlusionTextureSamplerIndex = model.textures[textureIndexGLTF].sampler;
+			 // make it heap index
+			 material->occlusionTextureSamplerIndex = GetSamplerHeapIndexFromGLTF(model.samplers[material->occlusionTextureSamplerIndex]);
+		 }
+		 else {
+			 // ADD DEFAULT TEXTURE LOADING => HERE ASSIGN DEFAULT TEXTUES
+			 material->occlusionTextureIndex = -1;
+			 material->occlusionTextureSamplerIndex = -1;
+		 }
+		 material->texCoordIdOcclusion = materialGLTF.occlusionTexture.texCoord;
+		 material->strengthOcclusion = FLOAT(materialGLTF.occlusionTexture.strength);
+	 }
+
+	 //----NORMAL-----------------------------
+	 {
+		 // get GLTF index
+		 int textureIndexGLTF = materialGLTF.normalTexture.index;
+		 if (textureIndexGLTF >= 0) {
+			 // make it into heap index
+			 material->normalTextureIndex = imageHeapIds[model.textures[textureIndexGLTF].source];
+			 // get GLTF index
+			 material->normalTextureSamplerIndex = model.textures[textureIndexGLTF].sampler;
+			 // make it heap index
+			 material->normalTextureSamplerIndex = GetSamplerHeapIndexFromGLTF(model.samplers[material->normalTextureSamplerIndex]);
+		 }
+		 else {
+			 // ADD DEFAULT TEXTURE LOADING => HERE ASSIGN DEFAULT TEXTUES
+			 material->normalTextureIndex = -1;
+			 material->normalTextureSamplerIndex = -1;
+		 }
+		 material->texCoordIdNorm = materialGLTF.normalTexture.texCoord;
+		 material->scaleNormal = FLOAT(materialGLTF.normalTexture.scale);
+	 }
+
+	 //---EMISSIVE-------------------
+	 {
+		 // get GLTF index
+		 int textureIndexGLTF = materialGLTF.emissiveTexture.index;
+		 if (textureIndexGLTF >= 0) {
+			 // make it into heap index
+			 material->emissiveTextureIndex = imageHeapIds[model.textures[textureIndexGLTF].source];
+			 // get GLTF index
+			 material->emissiveTextureSamplerIndex = model.textures[textureIndexGLTF].sampler;
+			 // make it heap index
+			 material->emissiveTextureSamplerIndex = GetSamplerHeapIndexFromGLTF(model.samplers[material->emissiveTextureSamplerIndex]);
+		 }
+		 else {
+			 // ADD DEFAULT TEXTURE LOADING => HERE ASSIGN DEFAULT TEXTUES
+			 material->emissiveTextureIndex = -1;
+			 material->emissiveTextureSamplerIndex = -1;
+		 }
+		 material->texCoordIdEmiss = materialGLTF.emissiveTexture.texCoord;
+		 material->emisiveFactor = XMFLOAT3{
+			 FLOAT(materialGLTF.emissiveFactor[0]),
+			 FLOAT(materialGLTF.emissiveFactor[1]),
+			 FLOAT(materialGLTF.emissiveFactor[2])
+		 };
+	 }
+	 
  }
  // Move to model.cpp?
  Model* D3D12HelloTriangle::LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups)
@@ -1052,20 +1296,168 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 memcpy(&xmat.r->m128_f32[0], glm::value_ptr(mat), 16 * sizeof(float));
 	 return xmat;
  }
+
+ void D3D12HelloTriangle::FillInSamplerHeap() {
+
+	 D3D12_SAMPLER_DESC samplerDesc = {};
+	 for (int i = 0; i < 12; i++) {
+		 switch (i) {
+			 case (0):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+				 break;
+			 case(1):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+				 break;
+			 case(2):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT;
+				 break;
+			 case(3):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+				 break;
+			 case(4):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+				 break;
+			 case(5):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT;
+				 break;
+			 case(6):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT;
+				 break;
+			 case(7):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+				 break;
+			 case(8):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR;
+				 break;
+			 case(9):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_POINT_MAG_MIP_LINEAR;
+				 break;
+			 case(10):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_LINEAR_MAG_POINT_MIP_LINEAR;
+				 break;
+			 case(11):
+				 samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+				 break;
+		 }
+		 for (int j = 0; j < 3; j++) {
+			 switch (j) {
+				 case (0):
+					 samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+					 break;
+				 case(1):
+					 samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+					 break;
+				 case(2):
+					 samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+					 break;
+			 }
+			 for (int w = 0; w < 3; w++) {
+				 switch (w) {
+				 case (0):
+					 samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+					 break;
+				 case(1):
+					 samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+					 break;
+				 case(2):
+					 samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+					 break;
+				 }
+				 samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+				 samplerDesc.MaxLOD = 256;
+
+				 D3D12_SAMPLER_DESC buildSamplerDesc = samplerDesc;
+				 m_device->CreateSampler(&buildSamplerDesc, m_SamplerHandle);
+				 m_SamplerHandle.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+				 m_SamplerIndex++;
+			 }
+		 }
+	 }
+ }
+ uint32_t D3D12HelloTriangle::GetSamplerHeapIndexFromGLTF(tinygltf::Sampler& sampler) {
+	 D3D12_SAMPLER_DESC samplerDesc = {};
+	 // setup filters for the sampler based on the samplers m_From the GLTF model
+	 int filterMultiplier = 0;
+	 int adressUMultiplier = 0;
+	 int adressVMultiplier = 0;
+	 switch (sampler.minFilter) {
+	 case TINYGLTF_TEXTURE_FILTER_NEAREST:
+		 if (sampler.magFilter == TINYGLTF_TEXTURE_FILTER_NEAREST)
+			 filterMultiplier = 0;
+		 else
+			 filterMultiplier = 1;
+		 break;
+	 case TINYGLTF_TEXTURE_FILTER_LINEAR:
+		 if (sampler.magFilter == TINYGLTF_TEXTURE_FILTER_NEAREST)
+			 filterMultiplier = 2;
+		 else
+			 filterMultiplier = 3;
+		 break;
+	 case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+		 if (sampler.magFilter == TINYGLTF_TEXTURE_FILTER_NEAREST)
+			 filterMultiplier = 4;
+		 else
+			 filterMultiplier = 5;
+		 break;
+	 case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+		 if (sampler.magFilter == TINYGLTF_TEXTURE_FILTER_NEAREST)
+			 filterMultiplier = 6;
+		 else
+			 filterMultiplier = 7;
+		 break;
+	 case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+		 if (sampler.magFilter == TINYGLTF_TEXTURE_FILTER_NEAREST)
+			 filterMultiplier = 8;
+		 else
+			 filterMultiplier = 9;
+		 break;
+	 case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+		 if (sampler.magFilter == TINYGLTF_TEXTURE_FILTER_NEAREST)
+			 filterMultiplier = 10;
+		 else
+			 filterMultiplier = 11;
+		 break;
+	 default:
+		 filterMultiplier = 0;
+		 break;
+	 }
+	 
+	switch (sampler.wrapS) {
+		 case TINYGLTF_TEXTURE_WRAP_REPEAT:
+			 adressUMultiplier = 0;
+			 break;
+		 case TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE:
+			 adressUMultiplier = 1;
+			 break;
+		 case TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT:
+			 adressUMultiplier = 2;
+			 break;
+	}
+	switch (sampler.wrapT) {
+	case TINYGLTF_TEXTURE_WRAP_REPEAT:
+		adressVMultiplier = 0;
+		break;
+	case TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE:
+		adressVMultiplier = 1;
+		break;
+	case TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT:
+		adressVMultiplier = 2;
+		break;
+	}
+	return filterMultiplier * 9 + adressUMultiplier * 3 + adressVMultiplier; // Mimicking the way we've put them in the heap
+ }
  // Gameplay code simulation------------------------------
  void D3D12HelloTriangle::MakeTestScene()
  {
 	
 	 GameObject a, b, c;
-	
 	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	
 	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	// b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
-	 b.m_transform = glm::scale(glm::vec3(0.04f)) * glm::translate(glm::vec3(2.f, 20.f, 0.f));
+	 b.m_transform = glm::scale(glm::vec3(0.4f)) * glm::translate(glm::vec3(0.f, 0.f, 0.f));
 	 c.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(1.f, 0.f, 0.f));
 
 	 m_myScene.m_sceneObjects.clear();
@@ -1079,10 +1471,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 GameObject a, b, c, d;
 	 Model am, bm, cm, dm;
 
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
-	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "PlaneHitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(0.04f));
 	 b.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));

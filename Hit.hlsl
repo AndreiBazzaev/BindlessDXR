@@ -1,21 +1,14 @@
 #include "Common.hlsl"
-#define COMMON_RESOURCE_OFFSET 3
-#define NUM_PER_PRIMITIVE_BUFFERS 3
+#define COMMON_RESOURCE_OFFSET 3 // RT output + TLAS + camera
 // Shading
 struct ShadowHitInfo
 {
 	bool isHit;
 };
-struct MaterialStruct {
-	uint hasNormals;
-	uint hasTangents;
-	uint hasColors;
-	uint hasTexcoords;
 
-};
 
 [shader("closesthit")] 
-void ClosestHit(inout HitInfo payload, Attributes attrib) 
+void ClosestHit(inout HitInfo payload, Attributes attrib)
 {
 	float3 barycentrics =
 		float3(1.f - attrib.bary.x - attrib.bary.y, attrib.bary.x, attrib.bary.y);
@@ -34,20 +27,108 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 	StructuredBuffer<float3> triNormal = ResourceDescriptorHeap[primHeapIndex + 2]; // + Material + Positions
 	StructuredBuffer<float4> triTangent = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals]; // + Material + Positions + Normals(optional)
 	StructuredBuffer<float4> triColor = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents]; // + Material + Positions + Normals(optional) + Tangents(optional)
-	StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents + material.hasColors]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional)
+	//StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents + material.hasColors]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional)
 
 	StructuredBuffer<int> indices = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + material.hasTangents + material.hasColors + material.hasTexcoords]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texcoords(optional)
-
-
-
-	//float3 hitColor = float3(0.f, 1.f, 0.f);
-
-	//// Model space normals
-	hitColor = (triNormal[indices[vertId + 0]] + 1.f) * 0.5 * barycentrics.x +
-		(triNormal[indices[vertId + 1]] + 1.f) * 0.5 * barycentrics.y +
-		(triNormal[indices[vertId + 2]] + 1.f) * 0.5 * barycentrics.z;
+	float4 baseColor = float4(0.f, 0.f, 0.f, 0.f);
+	if (material.baseTextureIndex >= 0){
+		Texture2D baseColorTexture = ResourceDescriptorHeap[material.baseTextureIndex];
+		SamplerState baseColorSampler = SamplerDescriptorHeap[material.baseTextureSamplerIndex];
+		StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + 
+			material.hasTangents + material.hasColors + material.texCoordIdBase]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texture coords for this prim texture
+		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
+			triTexcoord[indices[vertId + 1]] * barycentrics.y +
+			triTexcoord[indices[vertId + 2]] * barycentrics.z;
+		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, 0) * material.baseColor;
+	}
+	float2 metallicRoughness = float2(0.f, 0.f);
+	if (material.metallicRoughnessTextureIndex >= 0) {
+		Texture2D metallicRoughnessTexture = ResourceDescriptorHeap[material.metallicRoughnessTextureIndex];
+		SamplerState metallicRoughnessSampler = SamplerDescriptorHeap[material.metallicRoughnessTextureSamplerIndex];
+		StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + 
+			material.hasTangents + material.hasColors + material.texCoordIdMR]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texture coords for this prim texture
+		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
+			triTexcoord[indices[vertId + 1]] * barycentrics.y +
+			triTexcoord[indices[vertId + 2]] * barycentrics.z;
+		metallicRoughness = metallicRoughnessTexture.SampleLevel(metallicRoughnessSampler, uv, 0).rg;
+		metallicRoughness.r *= material.metallicFactor;
+		metallicRoughness.g *= material.roughnessFactor;
+	}
+	float occlusion = 0.f;
+	if (material.occlusionTextureIndex >= 0) {
+		Texture2D occlusionTexture = ResourceDescriptorHeap[material.occlusionTextureIndex];
+		SamplerState occlusionTextureSampler = SamplerDescriptorHeap[material.occlusionTextureSamplerIndex];
+		StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals + 
+			material.hasTangents + material.hasColors + material.texCoordIdOcclusion]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texture coords for this prim texture
+		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
+			triTexcoord[indices[vertId + 1]] * barycentrics.y +
+			triTexcoord[indices[vertId + 2]] * barycentrics.z;
+		occlusion = occlusionTexture.SampleLevel(occlusionTextureSampler, uv, 0).b ; // if it is a separate texture will b work? it should, as it is usually 3 same values for RGB
+		// occludedColor = lerp(color, color * <sampled occlusion
+		// texture value>, <occlusion strength>) - from GLTF spec - we will need later for PBR 
+		//material.strengthOcclusion
+	}
+	float3 normal = float3(0.f, 0.f, 0.f);
+	if (material.normalTextureIndex >= 0) {
+		Texture2D normalTexture = ResourceDescriptorHeap[material.normalTextureIndex];
+		SamplerState normalTextureSamplerIndex = SamplerDescriptorHeap[material.normalTextureSamplerIndex];
+		StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals +
+			material.hasTangents + material.hasColors + material.texCoordIdNorm]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texture coords for this prim texture
+		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
+			triTexcoord[indices[vertId + 1]] * barycentrics.y +
+			triTexcoord[indices[vertId + 2]] * barycentrics.z;
+		normal = normalTexture.SampleLevel(normalTextureSamplerIndex, uv, 0);
+		// scaledNormal = normalize((normal * 2.0f - 1.0f) * float3(material.scaleNormal, material.scaleNormal, 1.0f))
+		// scaled - part of GLTF spec
+	}
+	float3 emissive = float3(0.f, 0.f, 0.f);
+	if (material.emissiveTextureIndex >= 0) {
+		Texture2D emissiveTexture = ResourceDescriptorHeap[material.emissiveTextureIndex];
+		SamplerState emissiveTextureSamplerIndex = SamplerDescriptorHeap[material.emissiveTextureSamplerIndex];
+		StructuredBuffer<float2> triTexcoord = ResourceDescriptorHeap[primHeapIndex + 2 + material.hasNormals +
+			material.hasTangents + material.hasColors + material.texCoordIdEmiss]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texture coords for this prim texture
+		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
+			triTexcoord[indices[vertId + 1]] * barycentrics.y +
+			triTexcoord[indices[vertId + 2]] * barycentrics.z;
+		emissive = emissiveTexture.SampleLevel(emissiveTextureSamplerIndex, uv, 0) * material.emisiveFactor;
+	}
 	
-	hitColor = float3(1.f / 4.f, 1.f / 4.f, 1.f / 4.f) * float((material.hasNormals + material.hasTangents + material.hasColors + material.hasTexcoords) % 5);
+	if (renderMode.mode == 0) {
+		// Vertex colors
+		hitColor = float3(float4(triColor[indices[vertId + 0]] * barycentrics.x +
+			triColor[indices[vertId + 1]] * barycentrics.y +
+			triColor[indices[vertId + 2]] * barycentrics.z).xyz);
+	}
+	if (renderMode.mode == 1) {
+		//// Model space normals
+		hitColor = (triNormal[indices[vertId + 0]] + 1.f) * 0.5 * barycentrics.x +
+			(triNormal[indices[vertId + 1]] + 1.f) * 0.5 * barycentrics.y +
+			(triNormal[indices[vertId + 2]] + 1.f) * 0.5 * barycentrics.z;
+	}
+	if (renderMode.mode == 2) {
+		hitColor = float3(baseColor.xyz);
+	}
+	if (renderMode.mode == 3) {
+		hitColor = float3(metallicRoughness.r, metallicRoughness.r, metallicRoughness.r);
+	}
+	if (renderMode.mode == 4) {
+		hitColor = float3(metallicRoughness.g, metallicRoughness.g, metallicRoughness.g);
+	}
+	if (renderMode.mode == 5) {
+		hitColor = float3(metallicRoughness.rg, 0.f);
+	}
+	if (renderMode.mode == 6) {
+		float3(occlusion, occlusion, occlusion);
+	}
+	if (renderMode.mode == 7) {
+		float3(metallicRoughness.r, metallicRoughness.g, occlusion);
+	}
+	if (renderMode.mode == 8) {
+		hitColor = normal;
+	}
+	if (renderMode.mode == 9) {
+		hitColor = emissive;
+	}
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }
 // SECOND HIT SHADER for plane
@@ -76,8 +157,8 @@ void PlaneClosestHit(inout HitInfo payload, Attributes attrib)
 
 
 	uint vertId = 3 * PrimitiveIndex();
-	StructuredBuffer<float3> triNormal = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()] + GeometryIndex() * NUM_PER_PRIMITIVE_BUFFERS + 1];
-	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()] + GeometryIndex() * NUM_PER_PRIMITIVE_BUFFERS + 2];
+	StructuredBuffer<float3> triNormal = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()] + GeometryIndex()  + 1];
+	StructuredBuffer<int> indices = ResourceDescriptorHeap[heapIndexes[COMMON_RESOURCE_OFFSET + InstanceID()] + GeometryIndex()  + 2];
 
 
 	// Model space normals
