@@ -240,4 +240,10 @@ private:
 	// Bindless
 	std::vector<uint32_t> m_AllHeapIndices;
 	ComPtr<ID3D12Resource> m_HeapIndexBuffer;
+	// Mip maps
+	ComPtr<ID3D12RootSignature> m_MipMapRootSignature;
+	ComPtr<ID3D12PipelineState> m_MipMapPSO;
+	ComPtr<ID3D12RootSignature> CreateMipMapSignature();
+	void CreateMipMapPSO();
+	//void GenerateMips(uint32_t textureHeapIndex);
 };

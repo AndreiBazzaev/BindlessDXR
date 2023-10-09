@@ -80,7 +80,7 @@
     </FxCompile>
     <PostBuildEvent>
       <Command>(robocopy "$([MSBuild]::ValueOrDefault('$(SDK_ExecutablePath_x64.Split(';')[0])', ''))" "$(TargetDir)\" dxcompiler.dll dxil.dll) ^&amp; IF %ERRORLEVEL% LSS 8 SET ERRORLEVEL = 0
-</Command>
+IF NOT EXIST "$(TargetDir)Assets" mklink /J  /D "$(TargetDir)Assets" "$(ProjectDir)Assets"</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>Copy dxcompiler.dll and dxil.dll to target folder</Message>
@@ -119,7 +119,7 @@
     </FxCompile>
     <PostBuildEvent>
       <Command>(robocopy "$([MSBuild]::ValueOrDefault('$(SDK_ExecutablePath_x64.Split(';')[0])', ''))" "$(TargetDir)\" dxcompiler.dll dxil.dll) ^&amp; IF %ERRORLEVEL% LSS 8 SET ERRORLEVEL = 0
-</Command>
+IF NOT EXIST "$(TargetDir)Assets" mklink /J  /D "$(TargetDir)Assets" "$(ProjectDir)Assets"</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>Copy dxcompiler.dll and dxil.dll to target folder</Message>
@@ -186,6 +186,14 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Common.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="ComputeShaders\CreateMip.hlsl">
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.6</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>

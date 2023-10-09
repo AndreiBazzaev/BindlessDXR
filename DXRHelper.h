@@ -21,6 +21,7 @@ namespace nv_helpers_dx12
 //--------------------------------------------------------------------------------------------------
 //
 //
+  
 inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
                                     D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initState,
                                     const D3D12_HEAP_PROPERTIES& heapProps)
@@ -43,7 +44,7 @@ inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
                                                   initState, nullptr, IID_PPV_ARGS(&pBuffer)));
   return pBuffer;
 }
-inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint64_t width, uint64_t height, DXGI_FORMAT format,
+inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint64_t width, uint64_t height,uint32_t mips, DXGI_FORMAT format,
     D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initState,
     const D3D12_HEAP_PROPERTIES& heapProps)
 {
@@ -54,7 +55,7 @@ inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint64_t widt
     bufDesc.Flags = flags;
     bufDesc.Format = format;
     bufDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    bufDesc.MipLevels = 1;
+    bufDesc.MipLevels = mips;
     bufDesc.SampleDesc.Count = 1;
     bufDesc.SampleDesc.Quality = 0;
     bufDesc.Width = width;
@@ -226,7 +227,22 @@ IDxcBlob* CompileShaderLibrary(LPCWSTR fileName)
   ThrowIfFailed(pResult->GetResult(&pBlob));
   return pBlob;
 }
-
+ComPtr<ID3DBlob> CompileShader(const std::wstring& filename, const D3D_SHADER_MACRO* defines, const std::string& entrypoint, const std::string& target)
+{
+    UINT compileFlags = 0;
+#if defined(DEBUG) || defined(_DEBUG)
+    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+    HRESULT hr = S_OK;
+    ComPtr<ID3DBlob> byteCode = nullptr;
+    ComPtr<ID3DBlob> errors;
+    hr = D3DCompileFromFile(filename.c_str(), defines, D3D_COMPILE_STANDARD_FILE_INCLUDE,
+        entrypoint.c_str(), target.c_str(), compileFlags, 0, &byteCode, &errors);
+    if (errors != nullptr)
+        OutputDebugStringA((char*)errors->GetBufferPointer());
+    assert(SUCCEEDED(hr));
+    return byteCode;
+}
 //--------------------------------------------------------------------------------------------------
 //
 //

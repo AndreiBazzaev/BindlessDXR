@@ -19,6 +19,9 @@
     <Filter Include="stb_image">
       <UniqueIdentifier>{64beb67c-1d78-44aa-b532-d2d72dfce0a8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets\Shaders\Compute">
+      <UniqueIdentifier>{f5a3c1da-5a64-4a7a-9880-c17a8d2f95b3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -150,6 +153,9 @@
     </FxCompile>
     <FxCompile Include="ShadowRay.hlsl">
       <Filter>Assets\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="ComputeShaders\CreateMip.hlsl">
+      <Filter>Assets\Shaders\Compute</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>

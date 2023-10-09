@@ -178,6 +178,8 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
 		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, 0) * material.baseColor;
+
+		//float mipLevel = log2(max(ddx(length(ddx(uv))), ddy(length(ddy(uv)))));
 	}
 	float2 metallicRoughness = float2(0.f, 0.f);
 	if (material.metallicRoughnessTextureIndex >= 0) {

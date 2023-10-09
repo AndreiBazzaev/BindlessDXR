@@ -57,6 +57,9 @@ void D3D12HelloTriangle::OnInit()
 	//ThrowIfFailed(m_commandList->Close());
 	CreateRaytracingPipeline();
 
+	//-----COMPUTE INIT------
+	CreateMipMapPSO();
+	//----------------------
 	// Camera
 	nv_helpers_dx12::CameraManip.setWindowSize(GetWidth(), GetHeight());
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
@@ -91,6 +94,17 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateGlobalSignature() {
 	return rsc.Generate(m_device.Get(), false);
 }
 
+ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateMipMapSignature() {
+	nv_helpers_dx12::RootSignatureGenerator rsc;
+	// Source
+	D3D12_DESCRIPTOR_RANGE rangeSRV{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,1,0,0,0,};
+	// Dest
+	D3D12_DESCRIPTOR_RANGE rangeUAV{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV,1,0,0,0, };
+	rsc.AddHeapRangesParameter({ rangeSRV, rangeUAV });
+	
+	return rsc.Generate(m_device.Get(), true);
+}
+
 // ----------------------------------------------------
 // ---------CREATE RAYTRACING PIPELINE (similar to PSO in rasterization)------
 void D3D12HelloTriangle::CreateRaytracingPipeline()
@@ -106,12 +120,12 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// set of DXIL libraries. We chose to separate the code in several libraries
 	// by semantic (ray generation, hit, miss) for clarity. Any code layout can be
 	// used.
-	m_rayGenLibrary = nv_helpers_dx12::CompileShaderLibrary(L"RayGen.hlsl");
-	m_missLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Miss.hlsl");
-	m_hitLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Hit.hlsl");
+	m_rayGenLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/RayGen.hlsl");
+	m_missLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Miss.hlsl");
+	m_hitLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Hit.hlsl");
 
 	// SHADING-----------------------
-	m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"ShadowRay.hlsl");
+	m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/ShadowRay.hlsl");
 	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowClosestHit", L"ShadowMiss" });
 	m_shadowSignature = CreateMissSignature();
 	//------------------------------
@@ -180,7 +194,15 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 		m_rtStateObject->QueryInterface(IID_PPV_ARGS(&m_rtStateObjectProps)));
 
 }
-
+// ----------Other PSOs-----------------------------------
+void D3D12HelloTriangle::CreateMipMapPSO() {
+	D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+	m_MipMapRootSignature = CreateMipMapSignature();
+	psoDesc.pRootSignature = m_MipMapRootSignature.Get();
+	ComPtr<ID3DBlob> computeShader = nv_helpers_dx12::CompileShader(L"Assets\\ComputeShaders\\CreateMip.hlsl", nullptr, "main", "cs_5_1");
+	psoDesc.CS = { computeShader->GetBufferPointer(), computeShader->GetBufferSize() };
+	m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_MipMapPSO));
+}
 // --------- RT Output - buffer from which we copy data to the Render Target ----
 void D3D12HelloTriangle::CreateRaytracingOutputBuffer() {
 	D3D12_RESOURCE_DESC resDesc = {}; 
@@ -1052,7 +1074,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 break;
 		 }
 		 //uint32_t imageSize = image.width * image.height * image.component * image.bits / 8;
-		 texture = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, nv_helpers_dx12::kDefaultHeapProps);
+		 uint32_t mipsNum = 1;// +glm::log2(glm::max(image.width, image.height));
+		 texture = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, mipsNum, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, nv_helpers_dx12::kDefaultHeapProps);
 
 		 // questionable if I need an upload buffer here
 		 // COPY TEXTURE BUFFER
@@ -1062,7 +1085,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 UINT rowCount;
 			 UINT64 rowSize;
 			 UINT64 size;
-			 m_device->GetCopyableFootprints(&texture->GetDesc(), 0, 1, 0,
+			 m_device->GetCopyableFootprints(&texture->GetDesc(), 0, mipsNum, 0,
 				 &footprint, &rowCount, &rowSize, &size);
 			 ComPtr<ID3D12Resource> textureUploader;
 			 textureUploader = nv_helpers_dx12::CreateBuffer(m_device.Get(), size, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
@@ -1095,6 +1118,15 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 &srcCopyLocation, nullptr);
 			 textureUploader->Unmap(0, nullptr);
 
+			 /*
+			 UINT subresourceIndex = D3D12CalcSubresource(mipLevel, arraySlice, numMips); 
+			 D3D12_SUBRESOURCE_DATA textureData = {}; 
+			 textureData.pData = // pointer to your data ; 
+			 textureData.RowPitch = // row pitch of your data ; 
+			 textureData.SlicePitch =// size of your data ; 
+			 // Use UpdateSubresources or similar method to update the specific mip  level
+			 UpdateSubresources(deviceContext, textureResource, stagingResource, subresourceIndex, 0, 1, &textureData);
+			 */
 		 }
 		 imageHeapIds.push_back(nv_helpers_dx12::CreateBufferView(m_device.Get(), texture.Get(), NULL,
 			 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::TEXTURE));
@@ -1447,6 +1479,32 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	}
 	return filterMultiplier * 9 + adressUMultiplier * 3 + adressVMultiplier; // Mimicking the way we've put them in the heap
  }
+
+
+ //void D3D12HelloTriangle::GenerateMips(uint32_t textureHeapIndex) {
+	// // Setup resources
+	// m_commandList->SetComputeRootSignature(m_MipMapRootSignature.Get());
+	// m_commandList->SetPipelineState(m_MipMapPSO.Get());
+	// D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_CbvSrvUavHeap.Get()->GetGPUDescriptorHandleForHeapStart();
+	// srvHandle.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	// m_commandList->SetComputeRootDescriptorTable(0, srvHandle);
+	// 
+	// // Create UAV
+	// ComPtr<ID3D12Resource> textureUAV = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, mipsNum, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, nv_helpers_dx12::kDefaultHeapProps);
+
+	// m_commandList->SetComputeRootDescriptorTable(1, threshholdedTexture->m_UAVHandleGPU);
+
+	// const float threadGroupSize = 8.0;
+	// // Calculate the number of thread groups needed to cover the texture
+	// int numGroupsX = int(ceil(float(threshholdedTexture->m_Width) / threadGroupSize));
+	// int numGroupsY = int(ceil(float(threshholdedTexture->m_Height) / threadGroupSize));
+
+
+
+	// // Dispatch the shader with the calculated number of thread groups
+	// cmdList->Dispatch(numGroupsX, numGroupsY, 1);
+ //}
+
  // Gameplay code simulation------------------------------
  void D3D12HelloTriangle::MakeTestScene()
  {
