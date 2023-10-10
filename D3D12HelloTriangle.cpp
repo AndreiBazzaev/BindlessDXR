@@ -96,12 +96,13 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateGlobalSignature() {
 
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateMipMapSignature() {
 	nv_helpers_dx12::RootSignatureGenerator rsc;
+	
 	// Source
 	D3D12_DESCRIPTOR_RANGE rangeSRV{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,1,0,0,0,};
 	// Dest
 	D3D12_DESCRIPTOR_RANGE rangeUAV{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV,1,0,0,0, };
 	rsc.AddHeapRangesParameter({ rangeSRV, rangeUAV });
-	
+	rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, 0, 0, 1);
 	return rsc.Generate(m_device.Get(), true);
 }
 
@@ -725,12 +726,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 // The first data for the model - its primitive indexes buffer
 	  // Update Primitive Buffer according to the new data
 	 ComPtr<ID3D12Resource> primBuffer;
-	 CD3DX12_RANGE readRange(0, 0);
-	 primBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-	 UINT8* pPrimiBegin;
-	 ThrowIfFailed(primBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pPrimiBegin)));
-	 memcpy(pPrimiBegin, &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
-	 primBuffer->Unmap(0, nullptr);
+	 primBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+	 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), primBuffer.Get(), &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
+	
 	 // -------------Primitive Heap Upload------------------------
 	 model->m_heapPointer = nv_helpers_dx12::CreateBufferView(m_device.Get(), primBuffer.Get(),primBuffer->GetGPUVirtualAddress(),
 		 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(uint32_t));
@@ -746,14 +744,21 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 
 	 // --------Update Primitive Buffer according to the new data
 	 ComPtr<ID3D12Resource> newPrimBuffer;
-	 newPrimBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-	 UINT8* pNewPrimiBegin;
-	 ThrowIfFailed(newPrimBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNewPrimiBegin)));
-	 memcpy(pNewPrimiBegin, &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
-	 newPrimBuffer->Unmap(0, nullptr);
+	 newPrimBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * primitiveIndexes.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+	 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), newPrimBuffer.Get(), &primitiveIndexes[0], sizeof(uint32_t) * primitiveIndexes.size());
+
 	 
 	 // ---------------Heap Data Update------------------------
 	 nv_helpers_dx12::ChangeSRVResourceLoaction(m_device.Get(), newPrimBuffer.Get(), m_CbvSrvUavHeap.Get(), model->m_heapPointer, sizeof(uint32_t));
+	 
+	 ThrowIfFailed(m_commandList->Close());
+	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
+	 m_fenceValue++;
+	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
+	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
+	 WaitForSingleObject(m_fenceEvent, INFINITE);
+	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
 	 AccelerationStructureBuffers AS = CreateBottomLevelAS(modelVertexAndNum, modelIndexAndNum, transforms);
 	 ComPtr<ID3D12Resource> m_modelBLASBuffer = AS.pResult;
@@ -773,7 +778,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 // Build Matrix
 	 {
 		 // Build a constant buffer for node transform matrix
-		 transBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(XMMATRIX), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
+		 transBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(XMMATRIX), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
 
 		 // if GLTF node has a pre-specified matrix, use it
 		 if (glTFNode.matrix.size() == 16) {
@@ -800,10 +805,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 }
 			 modelSpaceTrans = scMat * rotMat * trMat * parentMat;
 		 }
-		 uint8_t* pData;
-		 ThrowIfFailed(transBuffer->Map(0, nullptr, (void**)&pData));
-		 memcpy(pData, &modelSpaceTrans, sizeof(XMMATRIX));
-		 transBuffer->Unmap(0, nullptr);
+		 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), transBuffer.Get(), &modelSpaceTrans, sizeof(XMMATRIX));
+		 
 	 }
 	 // Build Primitive data
 	 {
@@ -864,22 +867,11 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 modelVertexAndNum.back().second = vertexAccessor.count;
 				 modelIndexAndNum.back().second = indexAccessor.count;
 
-				 modelVertexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), vertexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-				 UINT8* pVertexDataBegin;
-				 CD3DX12_RANGE readRange(0, 0);
-				 ThrowIfFailed(modelVertexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-				 memcpy(pVertexDataBegin, vertexData, vertexDataSize);
-				 modelVertexAndNum.back().first->Unmap(0, nullptr);
-
-
-				 modelIndexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), indexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-				 // Copy the triangle data to the index buffer.
-				 UINT8* pIndexDataBegin;
-				 ThrowIfFailed(modelIndexAndNum.back().first->Map(0, &readRange, reinterpret_cast<void**>(&pIndexDataBegin)));
-				 memcpy(pIndexDataBegin, &indexData[0], indexDataSize);
-				 modelIndexAndNum.back().first->Unmap(0, nullptr);
-
-
+				 modelVertexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), vertexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+				 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), modelVertexAndNum.back().first.Get(), vertexData, vertexDataSize);
+				 modelIndexAndNum.back().first = nv_helpers_dx12::CreateBuffer(m_device.Get(), indexDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+				 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), modelIndexAndNum.back().first.Get(), &indexData[0], indexDataSize);
+				 
 				
 				 /*
 				 -------Primitive in heap---------
@@ -927,11 +919,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 					 //----------------Create material Buffer + Push to Heap-----------------------
 					 {
 						 ComPtr<ID3D12Resource> newMatBuffer;
-						 newMatBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(MaterialStruct), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-						 UINT8* pMaterialBegin;
-						 ThrowIfFailed(newMatBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pMaterialBegin)));
-						 memcpy(pMaterialBegin, &primMat, sizeof(MaterialStruct));
-						 newMatBuffer->Unmap(0, nullptr);
+						 newMatBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(MaterialStruct), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+						 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), newMatBuffer.Get(), &primMat, sizeof(MaterialStruct));
+
 						 // ---------------Heap Upload------------------------
 						 // WE START PRIMITIVE DATA IN A HEAP FROM MATERIAL OF THE FIRST PRIMITIVE
 						 primitiveIndexes.push_back(
@@ -955,11 +945,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 						 UINT normalDataSize = normalAccessor.count * normalAccessor.ByteStride(normalBufferView);
 						 const float* normalData = reinterpret_cast<const float*>(&model.buffers[normalBufferView.buffer].data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
 
-						 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-						 UINT8* pNormalBegin;
-						 ThrowIfFailed(newNormalBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pNormalBegin)));
-						 memcpy(pNormalBegin, normalData, normalDataSize);
-						 newNormalBuffer->Unmap(0, nullptr);
+						 newNormalBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), normalDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+						 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), newNormalBuffer.Get(), normalData, normalDataSize);
+
 						 // --------Upload to Heap-----------
 						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newNormalBuffer.Get(), newNormalBuffer->GetGPUVirtualAddress(),
 							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT3));
@@ -974,11 +962,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 						 UINT tangentDataSize = tangentAccessor.count * tangentAccessor.ByteStride(tangentBufferView);
 						 const float* tangentData = reinterpret_cast<const float*>(&model.buffers[tangentBufferView.buffer].data[tangentBufferView.byteOffset + tangentAccessor.byteOffset]);
 
-						 newTangentBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), tangentDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-						 UINT8* pTangentBegin;
-						 ThrowIfFailed(newTangentBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pTangentBegin)));
-						 memcpy(pTangentBegin, tangentData, tangentDataSize);
-						 newTangentBuffer->Unmap(0, nullptr);
+						 newTangentBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), tangentDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+						 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), newTangentBuffer.Get(), tangentData, tangentDataSize);
+						 
 						 // --------Upload to Heap-----------
 						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newTangentBuffer.Get(), newTangentBuffer->GetGPUVirtualAddress(),
 							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT4));
@@ -993,11 +979,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 						 UINT colorDataSize = colorAccessor.count * colorAccessor.ByteStride(colorBufferView);
 						 const float* colorData = reinterpret_cast<const float*>(&model.buffers[colorBufferView.buffer].data[colorBufferView.byteOffset + colorAccessor.byteOffset]);
 
-						 newColorBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), colorDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-						 UINT8* pColorBegin;
-						 ThrowIfFailed(newColorBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pColorBegin)));
-						 memcpy(pColorBegin, colorData, colorDataSize);
-						 newColorBuffer->Unmap(0, nullptr);
+						 newColorBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), colorDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+						 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), newColorBuffer.Get(), colorData, colorDataSize);
 						 // --------Upload to Heap-----------
 						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newColorBuffer.Get(), newColorBuffer->GetGPUVirtualAddress(),
 							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT4));
@@ -1013,11 +996,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 						 UINT texcoordDataSize = texcoordAccessor.count * texcoordAccessor.ByteStride(texcoordBufferView);
 						 const float* texcoordData = reinterpret_cast<const float*>(&model.buffers[texcoordBufferView.buffer].data[texcoordBufferView.byteOffset + texcoordAccessor.byteOffset]);
 
-						 newTexcoordBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), texcoordDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-						 UINT8* pTexcoordBegin;
-						 ThrowIfFailed(newTexcoordBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pTexcoordBegin)));
-						 memcpy(pTexcoordBegin, texcoordData, texcoordDataSize);
-						 newTexcoordBuffer->Unmap(0, nullptr);
+						 newTexcoordBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), texcoordDataSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+						 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), newTexcoordBuffer.Get(), texcoordData, texcoordDataSize);
+						 
 						 // --------Upload to Heap-----------
 						 nv_helpers_dx12::CreateBufferView(m_device.Get(), newTexcoordBuffer.Get(), newTexcoordBuffer->GetGPUVirtualAddress(),
 							 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(XMFLOAT2));
@@ -1074,8 +1055,8 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 break;
 		 }
 		 //uint32_t imageSize = image.width * image.height * image.component * image.bits / 8;
-		 uint32_t mipsNum = 1;// +glm::log2(glm::max(image.width, image.height));
-		 texture = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, mipsNum, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, nv_helpers_dx12::kDefaultHeapProps);
+		 uint16_t mipsNum = 1 + log2(glm::max(image.width, image.height));
+		 texture = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, mipsNum, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
 
 		 // questionable if I need an upload buffer here
 		 // COPY TEXTURE BUFFER
@@ -1085,7 +1066,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 UINT rowCount;
 			 UINT64 rowSize;
 			 UINT64 size;
-			 m_device->GetCopyableFootprints(&texture->GetDesc(), 0, mipsNum, 0,
+			 m_device->GetCopyableFootprints(&texture->GetDesc(), 0, 1, 0,
 				 &footprint, &rowCount, &rowSize, &size);
 			 ComPtr<ID3D12Resource> textureUploader;
 			 textureUploader = nv_helpers_dx12::CreateBuffer(m_device.Get(), size, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
@@ -1314,13 +1295,16 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 m_AllHeapIndices.push_back(scene->m_sceneObjects[i].m_model->m_heapPointer);
 	 }
 	 // Upload HEAP INDEXES buffer to gpu
-	 m_HeapIndexBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * m_AllHeapIndices.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-	 uint32_t* pData;
-	 CD3DX12_RANGE readRange(0, 0);
-	 m_HeapIndexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pData));
-	 memcpy(pData, m_AllHeapIndices.data(), sizeof(uint32_t) * m_AllHeapIndices.size()); m_HeapIndexBuffer->Unmap(0, nullptr);
+	 m_HeapIndexBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t) * m_AllHeapIndices.size(), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
+	 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), m_HeapIndexBuffer.Get(), m_AllHeapIndices.data(), sizeof(uint32_t) * m_AllHeapIndices.size());
+
 	 // Close cmd list
-	 ThrowIfFailed(m_commandList->Close());
+	 ThrowIfFailed(m_commandList->Close()); 
+	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
+	 m_fenceValue++;
+	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
+	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
+	 WaitForSingleObject(m_fenceEvent, INFINITE);
  }
  // Move this to helper?
  XMMATRIX D3D12HelloTriangle::GlmToXM_mat4(glm::mat4 gmat) {
@@ -1481,29 +1465,38 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
  }
 
 
- //void D3D12HelloTriangle::GenerateMips(uint32_t textureHeapIndex) {
-	// // Setup resources
-	// m_commandList->SetComputeRootSignature(m_MipMapRootSignature.Get());
-	// m_commandList->SetPipelineState(m_MipMapPSO.Get());
-	// D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_CbvSrvUavHeap.Get()->GetGPUDescriptorHandleForHeapStart();
-	// srvHandle.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	// m_commandList->SetComputeRootDescriptorTable(0, srvHandle);
-	// 
-	// // Create UAV
-	// ComPtr<ID3D12Resource> textureUAV = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, mipsNum, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, nv_helpers_dx12::kDefaultHeapProps);
+ void D3D12HelloTriangle::GenerateMips(uint32_t textureHeapIndex, uint16_t mips, uint32_t width, uint32_t height, DXGI_FORMAT format) {
+	 // Setup resources
+	 m_commandList->SetComputeRootSignature(m_MipMapRootSignature.Get());
+	 m_commandList->SetPipelineState(m_MipMapPSO.Get());
+	 m_commandList->SetDescriptorHeaps(1, &m_CbvSrvUavHeap);
 
-	// m_commandList->SetComputeRootDescriptorTable(1, threshholdedTexture->m_UAVHandleGPU);
+	 D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_CbvSrvUavHeap.Get()->GetGPUDescriptorHandleForHeapStart();
+	 srvHandle.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * textureHeapIndex;
+	 m_commandList->SetComputeRootDescriptorTable(0, srvHandle);
+	 
 
-	// const float threadGroupSize = 8.0;
-	// // Calculate the number of thread groups needed to cover the texture
-	// int numGroupsX = int(ceil(float(threshholdedTexture->m_Width) / threadGroupSize));
-	// int numGroupsY = int(ceil(float(threshholdedTexture->m_Height) / threadGroupSize));
-
-
-
-	// // Dispatch the shader with the calculated number of thread groups
-	// cmdList->Dispatch(numGroupsX, numGroupsY, 1);
- //}
+	 // Create UAV
+	 ComPtr<ID3D12Resource> textureUAV = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), width, height, mips, format, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nv_helpers_dx12::kDefaultHeapProps);
+	 uint32_t upoadIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), textureUAV.Get(), NULL,
+		 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::TEXTURE);
+	 
+	 D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_CbvSrvUavHeap.Get()->GetGPUDescriptorHandleForHeapStart();
+	 uavHandle.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * upoadIndex;
+	 m_commandList->SetComputeRootDescriptorTable(1, uavHandle);
+	 
+	 for (int i = 0; i < mips - 1; i++) {
+		 m_commandList->SetComputeRoot32BitConstant(2, i, 0);
+		 int mipWidth = glm::max(1, int(width >> (i + 1)));
+		 int mipHeight = glm::max(1, int(height >> (i + 1)));
+		 const float threadGroupSize = 8.0;
+		 // Calculate the number of thread groups needed to cover the texture
+		 int numGroupsX = int(ceil(float(mipWidth) / threadGroupSize));
+		 int numGroupsY = int(ceil(float(mipHeight) / threadGroupSize));
+		 // Dispatch the shader with the calculated number of thread groups
+		 m_commandList->Dispatch(numGroupsX, numGroupsY, 1);
+	 }
+ }
 
  // Gameplay code simulation------------------------------
  void D3D12HelloTriangle::MakeTestScene()

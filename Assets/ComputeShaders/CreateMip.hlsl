@@ -1,9 +1,16 @@
 
 Texture2D<float4> inputTexture : register(t0);
 RWTexture2D<float4> outputTexture : register(u0);
+struct MipLevel {
+    uint level;
+};
+ConstantBuffer<MipLevel> mipLevel : register(b0);
 [numthreads(8, 8, 1)]
 void main(uint3 DTid : SV_DispatchThreadID)
 {
+   // uint2 mipSize = inputTexture.GetDimensions().xy;
+  //  mipSize.x = max(1, inputTexture.GetDimensions().x >> mipLevel.level);
+   // mipSize.y = max(1, inputTexture.GetDimensions().y >> mipLevel.level);
     float4 neighbours[4];
     int2 coords[4];
     int2 i_coords = DTid.xy * 2;

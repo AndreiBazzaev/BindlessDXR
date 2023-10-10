@@ -94,6 +94,9 @@ void BottomLevelASGenerator::AddVertexBuffer(
 ) {
   // Create the DX12 descriptor representing the input data, assumed to be
   // opaque triangles, with 3xf32 vertex coordinates and 32-bit indices
+
+
+
   D3D12_RAYTRACING_GEOMETRY_DESC descriptor = {};
   descriptor.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
   descriptor.Triangles.VertexBuffer.StartAddress =

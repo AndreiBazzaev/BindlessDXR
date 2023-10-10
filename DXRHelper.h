@@ -44,7 +44,8 @@ inline ID3D12Resource* CreateBuffer(ID3D12Device* m_device, uint64_t size,
                                                   initState, nullptr, IID_PPV_ARGS(&pBuffer)));
   return pBuffer;
 }
-inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint64_t width, uint64_t height,uint32_t mips, DXGI_FORMAT format,
+
+inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint32_t width, uint32_t height,uint32_t mips, DXGI_FORMAT format,
     D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initState,
     const D3D12_HEAP_PROPERTIES& heapProps)
 {
@@ -227,6 +228,22 @@ IDxcBlob* CompileShaderLibrary(LPCWSTR fileName)
   ThrowIfFailed(pResult->GetResult(&pBlob));
   return pBlob;
 }
+inline void CopyToDirectResource(ID3D12Device* m_device, ID3D12GraphicsCommandList4* m_commandList, ID3D12Resource* resource, const void* data, size_t size)
+{
+    CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(resource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+    m_commandList->ResourceBarrier(1, &transition);
+
+    ComPtr<ID3D12Resource> uploadBuffer;
+    CD3DX12_RANGE readRange(0, 0);
+    uploadBuffer = CreateBuffer(m_device, size, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, kUploadHeapProps);
+    UINT8* pUploadBegin;
+    ThrowIfFailed(uploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pUploadBegin)));
+    memcpy(pUploadBegin, data, size);
+    uploadBuffer->Unmap(0, nullptr);
+    m_commandList->CopyResource(resource, uploadBuffer.Get());
+    transition = CD3DX12_RESOURCE_BARRIER::Transition(resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+    m_commandList->ResourceBarrier(1, &transition);
+}
 ComPtr<ID3DBlob> CompileShader(const std::wstring& filename, const D3D_SHADER_MACRO* defines, const std::string& entrypoint, const std::string& target)
 {
     UINT compileFlags = 0;
@@ -265,4 +282,5 @@ DirectX::XMMATRIX ConvertGLTFMatrixToXMMATRIX(double* gltfMatrix) {
                              float(gltfMatrix[8]), float(gltfMatrix[9]), float(gltfMatrix[10]), float(gltfMatrix[11]),
                              float(gltfMatrix[12]), float(gltfMatrix[13]), float(gltfMatrix[14]), float(gltfMatrix[15]))); }
 
-} // namespace nv_helpers_dx12
+}
+// namespace nv_helpers_dx12
