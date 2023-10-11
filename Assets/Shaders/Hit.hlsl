@@ -186,7 +186,7 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		////float mipLevel = float(log2(max(length(ddx(uv)), length(ddy(uv)))));
 		//float delta_max_sqr = max(dot(derivX, derivX), dot(derivY, derivY));
 		//float mip = 0.5 * log2(delta_max_sqr) * float(numLevels);
-		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, 0) * material.baseColor;
+		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, float(renderMode.mode)) * material.baseColor;
 
 		
 	}

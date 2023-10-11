@@ -95,30 +95,11 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateGlobalSignature() {
 }
 
 ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateMipMapSignature() {
-	//nv_helpers_dx12::RootSignatureGenerator rsc;
-	//
-	//// Source
-	//D3D12_DESCRIPTOR_RANGE rangeSRV{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV,1,0,0,0,};
-	//// Dest
-	//D3D12_DESCRIPTOR_RANGE rangeUAV{ D3D12_DESCRIPTOR_RANGE_TYPE_UAV,1,1,0,0, };
-	//rsc.AddHeapRangesParameter({ rangeSRV });
-	//rsc.AddHeapRangesParameter({ rangeUAV });
-	////rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, 0, 0, 1);
-	//return rsc.Generate(m_device.Get(), true);
-
-	CD3DX12_ROOT_PARAMETER rootParameters[2];
-	rootParameters[0].InitAsDescriptorTable(1, &CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0)); // UAV for Texture 1
-	rootParameters[1].InitAsDescriptorTable(1, &CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1)); // UAV for Texture 2
-
-	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-	rootSignatureDesc.Init(2, rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-	ID3DBlob* signature;
-	ID3DBlob* error;
-	HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
-	hr = m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_MipMapRootSignature));
-	signature->Release();
-	if (error) error->Release();
-	return m_MipMapRootSignature;
+	nv_helpers_dx12::RootSignatureGenerator rsc;
+	rsc.AddHeapRangesParameter({ CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0) });
+	rsc.AddHeapRangesParameter({ CD3DX12_DESCRIPTOR_RANGE(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1) });
+	
+	return rsc.Generate(m_device.Get(), false);
 }
 
 // ----------------------------------------------------
@@ -1478,7 +1459,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
  void D3D12HelloTriangle::GenerateMips(ComPtr<ID3D12Resource> texture) {
 	
-	 // transition
+	 // transition of the whole texture
 	 CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	 m_commandList->ResourceBarrier(1, &transition);
 
@@ -1492,11 +1473,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 D3D12_CPU_DESCRIPTOR_HANDLE uavHandleCPU = pUavHeap.Get()->GetCPUDescriptorHandleForHeapStart();
 	 uint32_t uavIndex = 0;
 	 
-	 // Create UAVs
+	 // Create UAVs for eachMip
 	 std::vector < D3D12_GPU_DESCRIPTOR_HANDLE> mipUAVs;
-	 std::vector < D3D12_CPU_DESCRIPTOR_HANDLE> mipUAVsCPU;
 	 for (int i = 0; i < texture.Get()->GetDesc().MipLevels; i++) {
-		 mipUAVsCPU.push_back(uavHandleCPU);
 		 nv_helpers_dx12::CreateBufferView(m_device.Get(), texture.Get(), NULL,
 			 uavHandleCPU, uavIndex, nv_helpers_dx12::MIP_UAV, 0, i);
 		 
@@ -1505,17 +1484,18 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	  }
 	
 
-	 // Setup resources
+	 // Setup Mip Map pipeline
 	 m_commandList->SetComputeRootSignature(m_MipMapRootSignature.Get());
 	 m_commandList->SetPipelineState(m_MipMapPSO.Get());
 	 std::vector<ID3D12DescriptorHeap*> heaps = { pUavHeap.Get() };
 	 m_commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
 
 	 for (int i = 0; i < texture.Get()->GetDesc().MipLevels - 1; i++) {
-		 
+		 // Source
 		 m_commandList->SetComputeRootDescriptorTable(0, mipUAVs[i]);
+		 // Destination
 		 m_commandList->SetComputeRootDescriptorTable(1, mipUAVs[i + 1]);
-
+		 // Calculate the size of the mip we will write to (original size / 2 ^ (i + 1))
 		 int mipWidth = glm::max(1, int(texture.Get()->GetDesc().Width >> (i + 1)));
 		 int mipHeight = glm::max(1, int(texture.Get()->GetDesc().Height >> (i + 1)));
 		 const float threadGroupSize = 8.0;
@@ -1524,14 +1504,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 int numGroupsY = int(ceil(float(mipHeight) / threadGroupSize));
 		 // Dispatch the shader with the calculated number of thread groups
 		 m_commandList->Dispatch(numGroupsX, numGroupsY, 1);
-		 // CHANGE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		 transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+		 transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ, i);
 		m_commandList->ResourceBarrier(1, &transition);
-		transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-		m_commandList->ResourceBarrier(1, &transition);
-		// nv_helpers_dx12::ChangeUavMipResourceLoaction(m_device.Get(), texture.Get(), mipUAVsCPU[i], i);
 	 }
-	 transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+	 transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ, texture.Get()->GetDesc().MipLevels - 1);
 	 m_commandList->ResourceBarrier(1, &transition);
 
 	 ThrowIfFailed(m_commandList->Close());
