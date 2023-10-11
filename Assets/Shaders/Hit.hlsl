@@ -168,6 +168,7 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 	StructuredBuffer<float4> triColor = ResourceDescriptorHeap[primHeapIndex + 3 + material.hasNormals + material.hasTangents]; // + Material + Transform + Positions + Normals(optional) + Tangents(optional)
 	
 	StructuredBuffer<int> indices = ResourceDescriptorHeap[primHeapIndex + 3 + material.hasNormals + material.hasTangents + material.hasColors + material.hasTexcoords]; // + Material + Positions + Normals(optional) + Tangents(optional) + Colors(optional) + Texcoords(optional)
+	float mip = RayTCurrent() / 5.f; // NEEDS TO BE REPLACED BY SOME FANCY SMART METHOD
 	float4 baseColor = float4(0.f, 0.f, 0.f, 0.f);
 	if (material.baseTextureIndex >= 0) {
 		Texture2D baseColorTexture = ResourceDescriptorHeap[material.baseTextureIndex];
@@ -178,15 +179,15 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
 
-		uint m, w, h, numLevels;
-		baseColorTexture.GetDimensions(m, w, h, numLevels);
+		//uint m, w, h, numLevels;
+		//baseColorTexture.GetDimensions(m, w, h, numLevels);
 
 		//float2 derivX = ddx(uv); 
 		//float2 derivY = ddy(uv);
 		////float mipLevel = float(log2(max(length(ddx(uv)), length(ddy(uv)))));
 		//float delta_max_sqr = max(dot(derivX, derivX), dot(derivY, derivY));
 		//float mip = 0.5 * log2(delta_max_sqr) * float(numLevels);
-		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, float(renderMode.mode)) * material.baseColor;
+		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, mip) * material.baseColor;
 
 		
 	}
@@ -199,7 +200,7 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
-		metallicRoughness = metallicRoughnessTexture.SampleLevel(metallicRoughnessSampler, uv, 0).rg;
+		metallicRoughness = metallicRoughnessTexture.SampleLevel(metallicRoughnessSampler, uv, mip).rg;
 		metallicRoughness.r *= material.metallicFactor;
 		metallicRoughness.g *= material.roughnessFactor;
 	}
@@ -212,7 +213,7 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
-		occlusion = occlusionTexture.SampleLevel(occlusionTextureSampler, uv, 0).b; // if it is a separate texture will b work? it should, as it is usually 3 same values for RGB
+		occlusion = occlusionTexture.SampleLevel(occlusionTextureSampler, uv, mip).b; // if it is a separate texture will b work? it should, as it is usually 3 same values for RGB
 		// occludedColor = lerp(color, color * <sampled occlusion
 		// texture value>, <occlusion strength>) - from GLTF spec - we will need later for PBR 
 		//material.strengthOcclusion
@@ -226,7 +227,7 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
-		normal = normalTexture.SampleLevel(normalTextureSamplerIndex, uv, 0);
+		normal = normalTexture.SampleLevel(normalTextureSamplerIndex, uv, mip);
 		// scaledNormal = normalize((normal * 2.0f - 1.0f) * float3(material.scaleNormal, material.scaleNormal, 1.0f))
 		// scaled - part of GLTF spec
 	}
@@ -239,7 +240,7 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
-		emissive = emissiveTexture.SampleLevel(emissiveTextureSamplerIndex, uv, 0) * material.emisiveFactor;
+		emissive = emissiveTexture.SampleLevel(emissiveTextureSamplerIndex, uv, mip) * material.emisiveFactor;
 	}
 
 	if (renderMode.mode == 0) {
@@ -309,6 +310,6 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float factor = shadowPayload.isHit ? 0.3 : 1.0;
 		hitColor = baseColor * factor;
 	}
-	hitColor = float3(baseColor.xyz);
+	//hitColor = float3(baseColor.xyz);
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }

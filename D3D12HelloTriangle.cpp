@@ -1459,10 +1459,11 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 
  void D3D12HelloTriangle::GenerateMips(ComPtr<ID3D12Resource> texture) {
 	
-	 // transition of the whole texture
+	 // Transition of the whole texture
 	 CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	 m_commandList->ResourceBarrier(1, &transition);
 
+	 // Create a heap to hold UAVs for each mip map
 	 D3D12_DESCRIPTOR_HEAP_DESC uavHeapDesc = {}; 
 	 uavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	 uavHeapDesc.NumDescriptors = texture.Get()->GetDesc().MipLevels; // Assuming you have 9 mip 
@@ -1473,7 +1474,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 D3D12_CPU_DESCRIPTOR_HANDLE uavHandleCPU = pUavHeap.Get()->GetCPUDescriptorHandleForHeapStart();
 	 uint32_t uavIndex = 0;
 	 
-	 // Create UAVs for eachMip
+	 // Create UAVs for each Mip
 	 std::vector < D3D12_GPU_DESCRIPTOR_HANDLE> mipUAVs;
 	 for (int i = 0; i < texture.Get()->GetDesc().MipLevels; i++) {
 		 nv_helpers_dx12::CreateBufferView(m_device.Get(), texture.Get(), NULL,
@@ -1502,8 +1503,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 		 // Calculate the number of thread groups needed to cover the texture
 		 int numGroupsX = int(ceil(float(mipWidth) / threadGroupSize));
 		 int numGroupsY = int(ceil(float(mipHeight) / threadGroupSize));
-		 // Dispatch the shader with the calculated number of thread groups
+		 // Downsample into next mip
 		 m_commandList->Dispatch(numGroupsX, numGroupsY, 1);
+		 // Gradually make the whole texture Generic read + makes sure Dispatches will execute one after another and not in parallel
 		 transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ, i);
 		m_commandList->ResourceBarrier(1, &transition);
 	 }
