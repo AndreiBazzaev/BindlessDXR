@@ -16,7 +16,7 @@
 namespace nv_helpers_dx12
 {
     enum BufferType {
-        CBV, SRV_BUFFER, UAV, AS, TEXTURE
+        CBV, SRV_BUFFER, UAV, AS, TEXTURE, MIP_UAV
 };
 //--------------------------------------------------------------------------------------------------
 //
@@ -70,7 +70,7 @@ inline ID3D12Resource* CreateTextureBuffer(ID3D12Device* m_device, uint32_t widt
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
-inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type, UINT stride = 1)
+inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource, D3D12_GPU_VIRTUAL_ADDRESS GpuAdress, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t& heapIndex, BufferType type, UINT stride = 1, UINT mip = 0)
 {
     switch (type) {
         case CBV: {
@@ -108,6 +108,14 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
         case UAV: {
             D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
             uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            device->CreateUnorderedAccessView(resource, nullptr, &uavDesc, handleRef);
+            break;
+        }
+        case MIP_UAV: {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+            uavDesc.Format = resource->GetDesc().Format;
+            uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            uavDesc.Texture2D.MipSlice = mip;
             device->CreateUnorderedAccessView(resource, nullptr, &uavDesc, handleRef);
             break;
         }
@@ -151,6 +159,15 @@ inline void ChangeSRVResourceLoaction(ID3D12Device* device, ID3D12Resource* reso
     D3D12_CPU_DESCRIPTOR_HANDLE handle = heapPtr->GetCPUDescriptorHandleForHeapStart();
     handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * heapIndex;
     device->CreateShaderResourceView(resource, &srvDesc, handle);
+}
+inline void ChangeUavMipResourceLoaction(ID3D12Device* device, ID3D12Resource* resource, D3D12_CPU_DESCRIPTOR_HANDLE& handleRef, uint32_t mip)
+{
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.Format = resource->GetDesc().Format;
+    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavDesc.Texture2D.MipSlice = mip;
+    device->CreateUnorderedAccessView(resource, nullptr, &uavDesc, handleRef);
+
 }
 // Specifies a heap used for uploading. This heap type has CPU access optimized
 // for uploading to the GPU.

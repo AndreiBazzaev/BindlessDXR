@@ -245,5 +245,7 @@ private:
 	ComPtr<ID3D12PipelineState> m_MipMapPSO;
 	ComPtr<ID3D12RootSignature> CreateMipMapSignature();
 	void CreateMipMapPSO();
-	void GenerateMips(uint32_t textureHeapIndex, uint16_t mips, uint32_t width, uint32_t height, DXGI_FORMAT format);
+	void GenerateMips(ComPtr<ID3D12Resource> texture);
+
+	void GenerateMipLevel(ComPtr<ID3D12Resource> textureSrc, uint32_t mip);
 };

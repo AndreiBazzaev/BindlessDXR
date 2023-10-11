@@ -177,9 +177,18 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float2 uv = triTexcoord[indices[vertId + 0]] * barycentrics.x +
 			triTexcoord[indices[vertId + 1]] * barycentrics.y +
 			triTexcoord[indices[vertId + 2]] * barycentrics.z;
+
+		uint m, w, h, numLevels;
+		baseColorTexture.GetDimensions(m, w, h, numLevels);
+
+		//float2 derivX = ddx(uv); 
+		//float2 derivY = ddy(uv);
+		////float mipLevel = float(log2(max(length(ddx(uv)), length(ddy(uv)))));
+		//float delta_max_sqr = max(dot(derivX, derivX), dot(derivY, derivY));
+		//float mip = 0.5 * log2(delta_max_sqr) * float(numLevels);
 		baseColor = baseColorTexture.SampleLevel(baseColorSampler, uv, 0) * material.baseColor;
 
-		//float mipLevel = log2(max(ddx(length(ddx(uv))), ddy(length(ddy(uv)))));
+		
 	}
 	float2 metallicRoughness = float2(0.f, 0.f);
 	if (material.metallicRoughnessTextureIndex >= 0) {
@@ -300,5 +309,6 @@ void ShadedClosestHit(inout HitInfo payload, Attributes attrib)
 		float factor = shadowPayload.isHit ? 0.3 : 1.0;
 		hitColor = baseColor * factor;
 	}
+	hitColor = float3(baseColor.xyz);
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }
