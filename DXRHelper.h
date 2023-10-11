@@ -182,7 +182,7 @@ static const D3D12_HEAP_PROPERTIES kDefaultHeapProps = {
 //--------------------------------------------------------------------------------------------------
 // Compile a HLSL file into a DXIL library
 //
-IDxcBlob* CompileShaderLibrary(LPCWSTR fileName)
+IDxcBlob* CompileShaderLibrary(LPCWSTR fileName, LPCWSTR target)
 {
   static IDxcCompiler* pCompiler = nullptr;
   static IDxcLibrary* pLibrary = nullptr;
@@ -214,7 +214,7 @@ IDxcBlob* CompileShaderLibrary(LPCWSTR fileName)
 
   // Compile
   IDxcOperationResult* pResult;
-  ThrowIfFailed(pCompiler->Compile(pTextBlob, fileName, L"", L"lib_6_6", nullptr, 0, nullptr, 0,
+  ThrowIfFailed(pCompiler->Compile(pTextBlob, fileName, L"", target , nullptr, 0, nullptr, 0,
                                    dxcIncludeHandler, &pResult));
 
   // Verify the result
@@ -261,22 +261,7 @@ inline void CopyToDirectResource(ID3D12Device* m_device, ID3D12GraphicsCommandLi
     transition = CD3DX12_RESOURCE_BARRIER::Transition(resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
     m_commandList->ResourceBarrier(1, &transition);
 }
-ComPtr<ID3DBlob> CompileShader(const std::wstring& filename, const D3D_SHADER_MACRO* defines, const std::string& entrypoint, const std::string& target)
-{
-    UINT compileFlags = 0;
-#if defined(DEBUG) || defined(_DEBUG)
-    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-    HRESULT hr = S_OK;
-    ComPtr<ID3DBlob> byteCode = nullptr;
-    ComPtr<ID3DBlob> errors;
-    hr = D3DCompileFromFile(filename.c_str(), defines, D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        entrypoint.c_str(), target.c_str(), compileFlags, 0, &byteCode, &errors);
-    if (errors != nullptr)
-        OutputDebugStringA((char*)errors->GetBufferPointer());
-    assert(SUCCEEDED(hr));
-    return byteCode;
-}
+
 //--------------------------------------------------------------------------------------------------
 //
 //

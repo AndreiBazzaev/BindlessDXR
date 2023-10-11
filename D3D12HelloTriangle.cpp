@@ -117,12 +117,12 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// set of DXIL libraries. We chose to separate the code in several libraries
 	// by semantic (ray generation, hit, miss) for clarity. Any code layout can be
 	// used.
-	m_rayGenLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/RayGen.hlsl");
-	m_missLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Miss.hlsl");
-	m_hitLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Hit.hlsl");
+	m_rayGenLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/RayGen.hlsl", L"lib_6_6");
+	m_missLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Miss.hlsl", L"lib_6_6");
+	m_hitLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Hit.hlsl", L"lib_6_6");
 
 	// SHADING-----------------------
-	m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/ShadowRay.hlsl");
+	m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/ShadowRay.hlsl", L"lib_6_6");
 	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowClosestHit", L"ShadowMiss" });
 	m_shadowSignature = CreateMissSignature();
 	//------------------------------
@@ -196,7 +196,7 @@ void D3D12HelloTriangle::CreateMipMapPSO() {
 	D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
 	m_MipMapRootSignature = CreateMipMapSignature();
 	psoDesc.pRootSignature = m_MipMapRootSignature.Get();
-	ComPtr<ID3DBlob> computeShader = nv_helpers_dx12::CompileShader(L"Assets\\ComputeShaders\\CreateMip.hlsl", nullptr, "main", "cs_5_1");
+	IDxcBlob* computeShader = nv_helpers_dx12::CompileShaderLibrary(L"Assets/ComputeShaders/CreateMip.hlsl", L"cs_6_6"); //nv_helpers_dx12::CompileShader(L"Assets\\ComputeShaders\\CreateMip.hlsl", nullptr, "main", "cs_5_1");
 	psoDesc.CS = { computeShader->GetBufferPointer(), computeShader->GetBufferSize() };
 	m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_MipMapPSO));
 }
@@ -476,12 +476,12 @@ void D3D12HelloTriangle::PopulateCommandList()
 	// Set global RS
 	m_commandList->SetComputeRootSignature(m_globalSignature.Get());
 
-	// RT output should be writable in sahders
+	// RT output should be writable in shaders
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_outputResource.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	m_commandList->ResourceBarrier(1, &transition);
 	D3D12_DISPATCH_RAYS_DESC desc = {};
 	
-	// All rayGen sahders first
+	// All rayGen shaders first
 	uint32_t rayGenerationSectionSizeInBytes = m_sbtHelper.GetRayGenSectionSize();
 	desc.RayGenerationShaderRecord.StartAddress = m_sbtStorage->GetGPUVirtualAddress();
 	desc.RayGenerationShaderRecord.SizeInBytes = rayGenerationSectionSizeInBytes;
