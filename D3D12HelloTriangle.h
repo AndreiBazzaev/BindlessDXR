@@ -246,4 +246,10 @@ private:
 	ComPtr<ID3D12RootSignature> CreateMipMapSignature();
 	void CreateMipMapPSO();
 	void GenerateMips(ComPtr<ID3D12Resource> texture);
+	// Path Tracing
+	uint32_t m_FrameNumber = 0;
+	uint32_t m_FrameHeapIndex = 0;
+	void CreateFrameIndexBuffer();
+	void UpdateFrameIndexBuffer();
+	ComPtr< ID3D12Resource > m_FrameIndexBuffer;
 };

@@ -64,6 +64,7 @@ void D3D12HelloTriangle::OnInit()
 	nv_helpers_dx12::CameraManip.setWindowSize(GetWidth(), GetHeight());
 	nv_helpers_dx12::CameraManip.setLookat(glm::vec3(1.5f, 1.5f, 1.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	CreateCameraBuffer();
+	CreateFrameIndexBuffer();
 	//--------------------------------------------------------------------
 
 	MakeTestScene();
@@ -133,7 +134,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// using the [shader("xxx")] syntax
 	pipeline.AddLibrary(m_rayGenLibrary.Get(), { L"RayGen" });
 	pipeline.AddLibrary(m_missLibrary.Get(), { L"Miss" });
-	pipeline.AddLibrary(m_hitLibrary.Get(), { L"ClosestHit", L"ShadedClosestHit"});
+	pipeline.AddLibrary(m_hitLibrary.Get(), { L"ClosestHit"});//, L"ShadedClosestHit"
 
 	// To be used, each DX12 shader needs a root signature defining which
 	// parameters and buffers will be accessed.
@@ -145,7 +146,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// Hit group for the triangles, with a shader simply interpolating vertex
 	// colors
 	pipeline.AddHitGroup(L"HitGroup", L"ClosestHit");
-	pipeline.AddHitGroup(L"ShadedHitGroup", L"ShadedClosestHit");
+	//pipeline.AddHitGroup(L"ShadedHitGroup", L"ShadedClosestHit");
 	pipeline.AddHitGroup(L"ShadowHitGroup", L"ShadowClosestHit");
 	// The following section associates the root signature to each shader. Note
  // that we can explicitly show that some shaders share the same root signature
@@ -158,7 +159,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	pipeline.AddRootSignatureAssociation(m_missSignature.Get(),
 		{ L"Miss", L"ShadowMiss" });
 	pipeline.AddRootSignatureAssociation(m_hitSignature.Get(),
-		{ L"HitGroup", L"ShadedHitGroup" });
+		{ L"HitGroup"});//, L"ShadedHitGroup" 
 
 
 
@@ -180,7 +181,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// then requires a trace depth of 1. Note that this recursion depth should be
 	// kept to a minimum for best performance. Path tracing algorithms can be
 	// easily flattened into a simple loop in the ray generation.
-	pipeline.SetMaxRecursionDepth(2);
+	pipeline.SetMaxRecursionDepth(8);
 
 	// Compile the pipeline for execution on the GPU
 	m_rtStateObject = pipeline.Generate();
@@ -397,7 +398,7 @@ void D3D12HelloTriangle::OnUpdate()
 	SwitchScenes();
 
 	UpdateCameraBuffer();
-
+	UpdateFrameIndexBuffer();
 	// ANIMATE 
 	m_time++;
 	std::get<1>(m_instances[0]) = XMMatrixScaling(1.0003f, 1.0003f, 1.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
@@ -670,7 +671,13 @@ void D3D12HelloTriangle::UpdateCameraBuffer() {
 	memcpy(pData, matrices.data(), m_cameraBufferSize);
 	m_cameraBuffer->Unmap(0, nullptr);
 }
-
+void D3D12HelloTriangle::UpdateFrameIndexBuffer() {
+	m_FrameNumber++;
+	uint8_t* pData;
+	ThrowIfFailed(m_FrameIndexBuffer->Map(0, nullptr, (void**)&pData));
+	memcpy(pData, &m_FrameNumber, sizeof(uint32_t));
+	m_cameraBuffer->Unmap(0, nullptr);
+}
 //--------------------------------------------------------------------------------------------------
 void D3D12HelloTriangle::OnButtonDown(UINT32 lParam) {
 	nv_helpers_dx12::CameraManip.setMousePosition(-GET_X_LPARAM(lParam),
@@ -1224,11 +1231,18 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 			 material->emissiveTextureIndex = -1;
 			 material->emissiveTextureSamplerIndex = -1;
 		 }
+		 double emissiveStrength = 1.f;
+		 if (materialGLTF.extensions.find("KHR_materials_emissive_strength") != materialGLTF.extensions.end()) {
+			 const tinygltf::Value& extensionValue = materialGLTF.extensions["KHR_materials_emissive_strength"];
+			 if (extensionValue.IsObject()) {
+				 emissiveStrength = extensionValue.Get("emissiveStrength").GetNumberAsDouble();
+			 }
+		 }
 		 material->texCoordIdEmiss = materialGLTF.emissiveTexture.texCoord;
 		 material->emisiveFactor = XMFLOAT3{
-			 FLOAT(materialGLTF.emissiveFactor[0]),
-			 FLOAT(materialGLTF.emissiveFactor[1]),
-			 FLOAT(materialGLTF.emissiveFactor[2])
+			 FLOAT(materialGLTF.emissiveFactor[0] * emissiveStrength),
+			 FLOAT(materialGLTF.emissiveFactor[1] * emissiveStrength),
+			 FLOAT(materialGLTF.emissiveFactor[2] * emissiveStrength)
 		 };
 	 }
 	 
@@ -1282,6 +1296,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 m_AllHeapIndices.push_back(m_RTOutputHeapIndex);
 	 m_AllHeapIndices.push_back(m_TlasHeapIndex);
 	 m_AllHeapIndices.push_back(m_camHeapIndex);
+	 m_AllHeapIndices.push_back(m_FrameHeapIndex);
 	 // Fill in model indexes
 	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
 		 m_AllHeapIndices.push_back(scene->m_sceneObjects[i].m_model->m_heapPointer);
@@ -1525,14 +1540,23 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 mipUAVs.clear();
 	 
  }
+ void D3D12HelloTriangle::CreateFrameIndexBuffer()
+ {
+
+	 
+	 m_FrameIndexBuffer = nv_helpers_dx12::CreateBuffer(m_device.Get(), sizeof(uint32_t), D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kUploadHeapProps);
+	 m_FrameHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), m_FrameIndexBuffer.Get(), m_FrameIndexBuffer->GetGPUVirtualAddress(),
+			 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::SRV_BUFFER, sizeof(uint32_t));
+
+ }
  // Gameplay code simulation------------------------------
  void D3D12HelloTriangle::MakeTestScene()
  {
 	
 	 GameObject a, b, c;
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
-	c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 	// b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
@@ -1550,10 +1574,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 GameObject a, b, c, d;
 	 Model am, bm, cm, dm;
 
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
-	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "ShadedHitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(0.04f));
 	 b.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));
