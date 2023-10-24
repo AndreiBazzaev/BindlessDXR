@@ -34,7 +34,7 @@
 			},
 			"extensions":{
 				"KHR_materials_emissive_strength":{
-					"emissiveStrength":190.3000030517578
+					"emissiveStrength":1.9000030517578
 				}
 			},
 			"name":"Material.001",

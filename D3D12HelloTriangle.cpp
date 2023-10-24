@@ -29,6 +29,7 @@
 #include <locale>
 #include <codecvt>
 #include "stb_image/stb_image.h"
+#define MAX_RECURSION_DEPTH 10
 D3D12HelloTriangle::D3D12HelloTriangle(UINT width, UINT height, std::wstring name) :
 	DXSample(width, height, name),
 	m_frameIndex(0),
@@ -43,6 +44,9 @@ void D3D12HelloTriangle::CheckRaytracingSupport() {
 	ThrowIfFailed(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))); 
 	if (options5.RaytracingTier < D3D12_RAYTRACING_TIER_1_0) 
 		throw std::runtime_error("Raytracing not supported on device");
+}
+float randf() {
+	return float(rand() % 10000) / 10000.f;
 }
 void D3D12HelloTriangle::OnInit()
 {
@@ -181,7 +185,7 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 	// then requires a trace depth of 1. Note that this recursion depth should be
 	// kept to a minimum for best performance. Path tracing algorithms can be
 	// easily flattened into a simple loop in the ray generation.
-	pipeline.SetMaxRecursionDepth(8);
+	pipeline.SetMaxRecursionDepth(MAX_RECURSION_DEPTH);
 
 	// Compile the pipeline for execution on the GPU
 	m_rtStateObject = pipeline.Generate();
@@ -401,9 +405,9 @@ void D3D12HelloTriangle::OnUpdate()
 	UpdateFrameIndexBuffer();
 	// ANIMATE 
 	m_time++;
-	std::get<1>(m_instances[0]) = XMMatrixScaling(1.0003f, 1.0003f, 1.0003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
+	std::get<1>(m_instances[0]) = XMMatrixScaling(0.5003f, 0.5003f, 0.5003f) * XMMatrixRotationAxis({ 0.f, 1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(1.f, 0.0f * cosf(m_time / 20.f), -1.f);
 	//std::get<1>(m_instances[1]) = XMMatrixScaling(0.04f, 0.04f, 0.04f) * XMMatrixRotationAxis({ 0.f, 0.f, 1.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(0.f, 0.1f * cosf(m_time / 20.f), 1.f);
-//	std::get<1>(m_instances[2]) = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f) + 0.5f, 0.f);
+	std::get<1>(m_instances[2]) = XMMatrixScaling(0.15f, 0.15f, 0.15f) * XMMatrixRotationAxis({ 0.f, -1.f, 0.f }, static_cast<float>(m_time) / 50.0f) * XMMatrixTranslation(-1.f, 0.1f * cosf(m_time / 20.f) + 0.5f, 0.f);
 	/*
 	std::get<1>(m_instances[3]) = XMMatrixScaling(0.003f, 0.00001f, 0.003f) * XMMatrixTranslation(0.f, - 1.f, 0.f);
 	std::get<1>(m_instances[4]) = XMMatrixScaling(0.0006f, 0.0006f, 0.0006f);*/
@@ -676,7 +680,7 @@ void D3D12HelloTriangle::UpdateFrameIndexBuffer() {
 	uint8_t* pData;
 	ThrowIfFailed(m_FrameIndexBuffer->Map(0, nullptr, (void**)&pData));
 	memcpy(pData, &m_FrameNumber, sizeof(uint32_t));
-	m_cameraBuffer->Unmap(0, nullptr);
+	m_FrameIndexBuffer->Unmap(0, nullptr);
 }
 //--------------------------------------------------------------------------------------------------
 void D3D12HelloTriangle::OnButtonDown(UINT32 lParam) {
@@ -1059,7 +1063,18 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 				 break;
 		 }
 		 //uint32_t imageSize = image.width * image.height * image.component * image.bits / 8;
-		 uint16_t mipsNum = log2(glm::max(image.width, image.height));
+		 //int buffW = image.width;
+		 //int buffH = image.height;
+		 //if (buffW <= 256)
+			// buffW = 256;
+		 //else if (buffW % 256 != 0)
+			// buffW = buffW + (256 - buffW % 256);
+		 //if (buffH <= 256)
+			// buffH = 256;
+		 //else if (buffH % 256 != 0)
+			// buffH = buffH + (256 - buffH % 256);
+
+		 uint16_t mipsNum = glm::max(1, int(log2(glm::max(image.width, image.height))));
 		 texture = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), image.width, image.height, mipsNum, format, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON, nv_helpers_dx12::kDefaultHeapProps);
 
 		 // questionable if I need an upload buffer here
@@ -1554,10 +1569,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
  {
 	
 	 GameObject a, b, c;
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	// a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 	c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	// b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
 	 b.m_transform = glm::scale(glm::vec3(0.4f)) * glm::translate(glm::vec3(0.f, 0.f, 0.f));
@@ -1567,6 +1582,14 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 m_myScene.AddGameObject(a);
 	 m_myScene.AddGameObject(b); 
 	 m_myScene.AddGameObject(c);
+	 for (int i = 0; i < 12; i++) {
+
+		 GameObject n;
+		 n.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+		
+		 n.m_transform = glm::scale(glm::vec3(randf() + 0.1f)) * glm::translate(glm::vec3(randf() * 10.f - 5.f, randf() * 10.f - 5.f, randf() * 10.f - 5.f));
+		 m_myScene.AddGameObject(n);
+	 }
 	 UploadScene(&m_myScene);
  }
  void D3D12HelloTriangle::MakeTestScene1()

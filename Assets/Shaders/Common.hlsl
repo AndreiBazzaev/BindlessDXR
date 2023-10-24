@@ -4,9 +4,14 @@
 // Note that the payload should be kept as small as possible,
 // and that its size must be declared in the corresponding
 // D3D12_RAYTRACING_SHADER_CONFIG pipeline subobjet.
+#define invPI 0.318309886183f
+#define PI 3.141592653589f
+#define MAX_RECURSION_DEPTH 10
 struct HitInfo
 {
   float4 colorAndDistance;
+  uint recursionDepth;
+  float3 __padding;
 };
 
 // Attributes output by the raytracing when hitting a surface,
