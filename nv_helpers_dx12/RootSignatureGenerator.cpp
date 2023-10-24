@@ -123,6 +123,7 @@ void RootSignatureGenerator::AddHeapRangesParameter(
 void RootSignatureGenerator::AddRootParameter(D3D12_ROOT_PARAMETER_TYPE type,
                                               UINT shaderRegister /*= 0*/,
                                               UINT registerSpace /*= 0*/,
+                                              D3D12_SHADER_VISIBILITY visibility ,
                                               UINT numRootConstants /*= 1*/)
 {
   D3D12_ROOT_PARAMETER param = {};
@@ -142,7 +143,7 @@ void RootSignatureGenerator::AddRootParameter(D3D12_ROOT_PARAMETER_TYPE type,
   }
 
   // We default the visibility to all shaders
-  param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+  param.ShaderVisibility = visibility;
 
   // Add the root parameter to the set of parameters,
   m_parameters.push_back(param);

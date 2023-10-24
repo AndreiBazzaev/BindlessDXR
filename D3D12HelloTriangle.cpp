@@ -196,7 +196,7 @@ void D3D12HelloTriangle::CreateMipMapPSO() {
 	D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
 	m_MipMapRootSignature = CreateMipMapSignature();
 	psoDesc.pRootSignature = m_MipMapRootSignature.Get();
-	IDxcBlob* computeShader = nv_helpers_dx12::CompileShaderLibrary(L"Assets/ComputeShaders/CreateMip.hlsl", L"cs_6_6"); //nv_helpers_dx12::CompileShader(L"Assets\\ComputeShaders\\CreateMip.hlsl", nullptr, "main", "cs_5_1");
+	IDxcBlob* computeShader = nv_helpers_dx12::CompileShaderLibrary(L"Assets/ComputeShaders/CreateMip.hlsl", L"cs_6_6"); 
 	psoDesc.CS = { computeShader->GetBufferPointer(), computeShader->GetBufferSize() };
 	m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_MipMapPSO));
 }
@@ -1524,32 +1524,6 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 pUavHeap.Reset();
 	 mipUAVs.clear();
 	 
- }
- void D3D12HelloTriangle::GenerateMipLevel(ComPtr<ID3D12Resource> textureSrc, uint32_t mip) {
-	 //CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(textureSrc.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, mip - 1);
-	 //m_commandList->ResourceBarrier(1, &transition);
-	 // Set RWTexture<float4> input
-	 uint32_t upoadIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), textureSrc.Get(), NULL,
-		 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::MIP_UAV, 0, mip - 1);
-	 D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_CbvSrvUavHeap.Get()->GetGPUDescriptorHandleForHeapStart();
-	 uavHandle.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * upoadIndex;
-	 m_commandList->SetComputeRootDescriptorTable(0, uavHandle);
-	 
-	 // Set RWTexture<float4> output
-	 uint32_t upoadIndex1 = nv_helpers_dx12::CreateBufferView(m_device.Get(), textureSrc.Get(), NULL,
-		 m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::MIP_UAV, 0, mip);
-	 D3D12_GPU_DESCRIPTOR_HANDLE uavHandle1 = m_CbvSrvUavHeap.Get()->GetGPUDescriptorHandleForHeapStart();
-	 uavHandle1.ptr += m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * upoadIndex1;
-	 m_commandList->SetComputeRootDescriptorTable(1, uavHandle1);
-
-	 int mipWidth = glm::max(1, int(textureSrc.Get()->GetDesc().Width >> (mip)));
-	 int mipHeight = glm::max(1, int(textureSrc.Get()->GetDesc().Height >> (mip)));
-	 const float threadGroupSize = 8.0;
-	 // Calculate the number of thread groups needed to cover the texture
-	 int numGroupsX = int(ceil(float(mipWidth) / threadGroupSize));
-	 int numGroupsY = int(ceil(float(mipHeight) / threadGroupSize));
-	 // Dispatch the shader with the calculated number of thread groups
-	 m_commandList->Dispatch(numGroupsX, numGroupsY, 1);
  }
  // Gameplay code simulation------------------------------
  void D3D12HelloTriangle::MakeTestScene()

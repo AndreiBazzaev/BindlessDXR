@@ -100,7 +100,7 @@ public:
   /// In case of a root constant, the last parameter indicates how many successive 32-bit constants
   /// will be bound.
   void AddRootParameter(D3D12_ROOT_PARAMETER_TYPE type, UINT shaderRegister = 0,
-                        UINT registerSpace = 0, UINT numRootConstants = 1);
+                        UINT registerSpace = 0, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL, UINT numRootConstants = 1);
   
   /// Create the root signature from the set of parameters, in the order of the addition calls
   ID3D12RootSignature* Generate(ID3D12Device* device, bool isLocal);

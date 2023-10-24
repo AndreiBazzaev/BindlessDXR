@@ -246,6 +246,4 @@ private:
 	ComPtr<ID3D12RootSignature> CreateMipMapSignature();
 	void CreateMipMapPSO();
 	void GenerateMips(ComPtr<ID3D12Resource> texture);
-
-	void GenerateMipLevel(ComPtr<ID3D12Resource> textureSrc, uint32_t mip);
 };
