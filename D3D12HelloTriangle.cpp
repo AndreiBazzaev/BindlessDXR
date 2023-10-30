@@ -456,6 +456,7 @@ void D3D12HelloTriangle::OnKeyUp(UINT8 key)
 		if (m_renderMode >= m_numRenderModes)
 			m_renderMode = 0;
 	}
+
 }
 void D3D12HelloTriangle::PopulateCommandList()
 {

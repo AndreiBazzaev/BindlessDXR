@@ -33,6 +33,14 @@ void RayGen() {
 	ray.Direction = mul(camBuffer.viewInv, float4(target.xyz, 0));
 	ray.TMin = 0;
 	ray.TMax = 100000;
+
+	// Seeding
+	StructuredBuffer<uint> frameIndexBuffer = ResourceDescriptorHeap[heapIndexes[3]];
+	uint frameIndex = frameIndexBuffer[0]; // can be used for more random pos
+	uint2 dimentions = DispatchRaysDimensions().xy;
+	uint pixelID = dimentions.x * DispatchRaysIndex().y + DispatchRaysIndex().x;
+	uint seed = GetWangHashSeed(pixelID * 3 + 1);
+	payload.seed = seed;
 	// Trace the ray description
 	TraceRay(sceneBVH,RAY_FLAG_NONE,0xFF, 0, 0, 0, ray, payload);
 	// We output the data from the ray's payload

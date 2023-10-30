@@ -108,7 +108,7 @@ private:
 	void FillInfoPBR(tinygltf::Model& model, tinygltf::Primitive& prim, MaterialStruct* material, std::vector<uint32_t>& imageHeapIds);
 	void LoadImageData(tinygltf::Model& model, std::vector<uint32_t>& imageHeapIds);
 	uint32_t m_renderMode = 0;
-	uint32_t m_numRenderModes = 12;
+	uint32_t m_numRenderModes = 13;
 	// For now render modes
 	// 0 - vertex colors
 	// 1 - vertex normals
@@ -122,6 +122,7 @@ private:
 	// 9 - world space normals 
 	// 10 - emissive
 	// 11 - basecolor + shadows
+	// 12 - path Tracing
 	//----------------------------
 	// Pipeline objects.
 	CD3DX12_VIEWPORT m_viewport;

@@ -11,7 +11,8 @@ struct HitInfo
 {
   float4 colorAndDistance;
   uint recursionDepth;
-  float3 __padding;
+  uint seed;
+  float2 __padding;
 };
 
 // Attributes output by the raytracing when hitting a surface,

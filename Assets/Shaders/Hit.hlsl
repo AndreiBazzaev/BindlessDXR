@@ -6,8 +6,8 @@ struct ShadowHitInfo
 	bool isHit;
 };
 
-float3 GetDiffuseReflected(float3 normal, uint seed) {
-	float3 ray = normalize(float3(rand(seed), rand(seed), rand(seed)) * 2.f - 1.f);
+float3 GetDiffuseReflected(float3 normal,inout uint seed) {
+	float3 ray = normalize(float3(rand(seed), rand(seed), rand(seed)) * 2.f - 1.f) ;
 	if (dot(ray, normal) < 0.f) ray *= -1.f;
 	return ray;
 }
@@ -110,118 +110,115 @@ void ClosestHit(inout HitInfo payload, Attributes attrib)
 		emissive = emissiveTexture.SampleLevel(emissiveTextureSamplerIndex, uv, mip) * material.emisiveFactor;
 	}
 
-	//if (renderMode.mode == 0) {
-	//	// Vertex colors
-	//	hitColor = float3(float4(triColor[indices[vertId + 0]] * barycentrics.x +
-	//		triColor[indices[vertId + 1]] * barycentrics.y +
-	//		triColor[indices[vertId + 2]] * barycentrics.z).xyz);
-	//}
-	//if (renderMode.mode == 1) {
-	//	//// Model space normals
-	//	hitColor = (triNormal[indices[vertId + 0]] + 1.f) * 0.5 * barycentrics.x +
-	//		(triNormal[indices[vertId + 1]] + 1.f) * 0.5 * barycentrics.y +
-	//		(triNormal[indices[vertId + 2]] + 1.f) * 0.5 * barycentrics.z;
-	//}
-	//if (renderMode.mode == 2) {
-	//	hitColor = float3(baseColor.xyz);
-	//}
-	//if (renderMode.mode == 3) {
-	//	hitColor = float3(metallicRoughness.r, metallicRoughness.r, metallicRoughness.r);
-	//}
-	//if (renderMode.mode == 4) {
-	//	hitColor = float3(metallicRoughness.g, metallicRoughness.g, metallicRoughness.g);
-	//}
-	//if (renderMode.mode == 5) {
-	//	hitColor = float3(metallicRoughness.rg, 0.f);
-	//}
-	//if (renderMode.mode == 6) {
-	//	float3(occlusion, occlusion, occlusion);
-	//}
-	//if (renderMode.mode == 7) {
-	//	float3(metallicRoughness.r, metallicRoughness.g, occlusion);
-	//}
-	//if (renderMode.mode == 8) {
-	//	hitColor = normal;
-	//}
-	//if (renderMode.mode == 9) {
-	//	// World space normals
-	//	float3 vertN = triNormal[indices[vertId + 0]] * barycentrics.x +
-	//		triNormal[indices[vertId + 1]] * barycentrics.y +
-	//		triNormal[indices[vertId + 2]] * barycentrics.z;
-	//	float3 modelSpaceN = mul(vertN, (float3x3)transform);
-	//	float3x3 upperLeft3x3ObjectToWorld = (float3x3)ObjectToWorld3x4();
-	//	float3 transformedNormal = normalize(mul(modelSpaceN, (float3x3)ObjectToWorld3x4()));
-	//	hitColor = (transformedNormal + 1.f) * 0.5f;
-	//}
-	//if (renderMode.mode == 10) {
-	//	hitColor = emissive;
-	//}
-	//if (renderMode.mode == 11) {
-	//	float3 lightPos = float3(0, 2.5, 0);
-	//	// Find the world - space hit position 
-	//	float3 worldOriginLight = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
-	//	float3 lightDir = normalize(lightPos - worldOriginLight);
-	//	// Fire a shadow ray. The direction is hard-coded here, but can be fetched 
-	//	// from a constant-buffer 
-	//	RayDesc ray;
-	//	ray.Origin = worldOriginLight;
-	//	ray.Direction = lightDir;
-	//	ray.TMin = 0.01;
-	//	ray.TMax = 100000;
-	//	bool hit = true;
-	//	// Initialize the ray payload 
-	//	ShadowHitInfo shadowPayload;
-	//	shadowPayload.isHit = false; // Trace the ray 
-	//	RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[heapIndexes[1]];
-	//	TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 1, 0, 1, ray, shadowPayload);
-	//	float factor = shadowPayload.isHit ? 0.3 : 1.0;
-	//	hitColor = baseColor * factor;
-	//}
-	//hitColor = float3(baseColor.xyz);
-	if (length(emissive) > 0.f) {
-		hitColor = baseColor.xyz + emissive;
+	if (renderMode.mode == 0) {
+		// Vertex colors
+		hitColor = float3(float4(triColor[indices[vertId + 0]] * barycentrics.x +
+			triColor[indices[vertId + 1]] * barycentrics.y +
+			triColor[indices[vertId + 2]] * barycentrics.z).xyz);
 	}
-	else {
-		// Intersection
-		float3 rayHitPos = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
-		// World space normal
+	if (renderMode.mode == 1) {
+		//// Model space normals
+		hitColor = (triNormal[indices[vertId + 0]] + 1.f) * 0.5 * barycentrics.x +
+			(triNormal[indices[vertId + 1]] + 1.f) * 0.5 * barycentrics.y +
+			(triNormal[indices[vertId + 2]] + 1.f) * 0.5 * barycentrics.z;
+	}
+	if (renderMode.mode == 2) {
+		hitColor = float3(baseColor.xyz);
+	}
+	if (renderMode.mode == 3) {
+		hitColor = float3(metallicRoughness.r, metallicRoughness.r, metallicRoughness.r);
+	}
+	if (renderMode.mode == 4) {
+		hitColor = float3(metallicRoughness.g, metallicRoughness.g, metallicRoughness.g);
+	}
+	if (renderMode.mode == 5) {
+		hitColor = float3(metallicRoughness.rg, 0.f);
+	}
+	if (renderMode.mode == 6) {
+		float3(occlusion, occlusion, occlusion);
+	}
+	if (renderMode.mode == 7) {
+		float3(metallicRoughness.r, metallicRoughness.g, occlusion);
+	}
+	if (renderMode.mode == 8) {
+		hitColor = normal;
+	}
+	if (renderMode.mode == 9) {
+		// World space normals
 		float3 vertN = triNormal[indices[vertId + 0]] * barycentrics.x +
 			triNormal[indices[vertId + 1]] * barycentrics.y +
 			triNormal[indices[vertId + 2]] * barycentrics.z;
 		float3 modelSpaceN = mul(vertN, (float3x3)transform);
 		float3x3 upperLeft3x3ObjectToWorld = (float3x3)ObjectToWorld3x4();
 		float3 transformedNormal = normalize(mul(modelSpaceN, (float3x3)ObjectToWorld3x4()));
-		// Seeding
-		StructuredBuffer<uint> frameIndexBuffer = ResourceDescriptorHeap[heapIndexes[3]];
-		uint frameIndex = frameIndexBuffer[0]; // can be used for more random pos
-		uint2 dimentions = DispatchRaysDimensions().xy;
-		uint pixelID = dimentions.x * DispatchRaysIndex().y + DispatchRaysIndex().x;
-		uint seed = GetWangHashSeed(pixelID * 3 + 1);
-		// New Direction
-		float3 newDir = GetDiffuseReflected(transformedNormal, seed);
-		// New Ray
+		hitColor = (transformedNormal + 1.f) * 0.5f;
+	}
+	if (renderMode.mode == 10) {
+		hitColor = emissive;
+	}
+	if (renderMode.mode == 11) {
+		float3 lightPos = float3(0, 2.5, 0);
+		// Find the world - space hit position 
+		float3 worldOriginLight = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
+		float3 lightDir = normalize(lightPos - worldOriginLight);
+		// Fire a shadow ray. The direction is hard-coded here, but can be fetched 
+		// from a constant-buffer 
 		RayDesc ray;
-		ray.Origin = rayHitPos;
-		ray.Direction = newDir;
+		ray.Origin = worldOriginLight;
+		ray.Direction = lightDir;
 		ray.TMin = 0.01;
 		ray.TMax = 100000;
-		// Random Walk
-		HitInfo newPayload;
-		newPayload.colorAndDistance =float4(0, 0, 0, 0);
-		// Update Recursion Depth
-		newPayload.recursionDepth = payload.recursionDepth + 1;
-		if (newPayload.recursionDepth >= MAX_RECURSION_DEPTH -1) {
-			newPayload.colorAndDistance = float4(0, 0, 0, 0);
+		bool hit = true;
+		// Initialize the ray payload 
+		ShadowHitInfo shadowPayload;
+		shadowPayload.isHit = false; // Trace the ray 
+		RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[heapIndexes[1]];
+		TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 1, 0, 1, ray, shadowPayload);
+		float factor = shadowPayload.isHit ? 0.3 : 1.0;
+		hitColor = baseColor * factor;
+	}
+	if (renderMode.mode == 12) {
+		if (length(emissive) > 0.f) {
+			hitColor = baseColor.xyz + emissive;
 		}
 		else {
-			RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[heapIndexes[1]];
-			TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, newPayload);
+			// Intersection
+			float3 rayHitPos = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
+			// World space normal
+			float3 vertN = triNormal[indices[vertId + 0]] * barycentrics.x +
+				triNormal[indices[vertId + 1]] * barycentrics.y +
+				triNormal[indices[vertId + 2]] * barycentrics.z;
+			float3 modelSpaceN = mul(vertN, (float3x3)transform);
+			float3x3 upperLeft3x3ObjectToWorld = (float3x3)ObjectToWorld3x4();
+			float3 transformedNormal = normalize(mul(modelSpaceN, (float3x3)ObjectToWorld3x4()));
+
+			// New Direction
+			float3 newDir = GetDiffuseReflected(transformedNormal, payload.seed);
+			// New Ray
+			RayDesc ray;
+			ray.Origin = rayHitPos;
+			ray.Direction = newDir;
+			ray.TMin = 0.01;
+			ray.TMax = 100000;
+			// Random Walk
+			HitInfo newPayload;
+			newPayload.colorAndDistance = float4(0, 0, 0, 0);
+			// Update Recursion Depth
+			newPayload.recursionDepth = payload.recursionDepth + 1;
+			if (newPayload.recursionDepth >= MAX_RECURSION_DEPTH - 1) {
+				newPayload.colorAndDistance = float4(0, 0, 0, 0);
+			}
+			else {
+				newPayload.seed = payload.seed;
+				RaytracingAccelerationStructure sceneBVH = ResourceDescriptorHeap[heapIndexes[1]];
+				TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, newPayload);
+			}
+			// BRDF
+			float3 albedo = baseColor.xyz + emissive;
+			float3 brdf = albedo * invPI;
+			hitColor = brdf * 2.f * PI * dot(newDir, transformedNormal) * newPayload.colorAndDistance.xyz;
+
 		}
-		// BRDF
-		float3 albedo = baseColor.xyz + emissive;
-		float3 brdf = albedo * invPI;
-		hitColor = brdf * 2.f * PI * dot(newDir, transformedNormal) * newPayload.colorAndDistance.xyz;
-		
 	}
 	payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }
