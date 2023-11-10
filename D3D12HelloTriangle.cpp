@@ -128,7 +128,8 @@ void D3D12HelloTriangle::CreateRaytracingPipeline()
 
 	// SHADING-----------------------
 	m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/ShadowRay.hlsl", L"lib_6_6");
-	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowClosestHit", L"ShadowMiss" });
+	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowClosestHit" });
+	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowMiss" });
 	m_shadowSignature = CreateMissSignature();
 	//------------------------------
 	// In a way similar to DLLs, each library is associated with a number of
@@ -207,20 +208,7 @@ void D3D12HelloTriangle::CreateMipMapPSO() {
 }
 // --------- RT Output - buffer from which we copy data to the Render Target ----
 void D3D12HelloTriangle::CreateRaytracingOutputBuffer() {
-	D3D12_RESOURCE_DESC resDesc = {}; 
-	resDesc.DepthOrArraySize = 1; 
-	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; 
-	// The backbuffer is actually DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, but sRGB 
-	// formats cannot be used with UAVs. For accuracy we should convert to sRGB 
-	// ourselves in the shader 
-	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; 
-	resDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; 
-	resDesc.Width = GetWidth(); 
-	resDesc.Height = GetHeight(); 
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN; 
-	resDesc.MipLevels = 1; 
-	resDesc.SampleDesc.Count = 1; 
-	ThrowIfFailed(m_device->CreateCommittedResource( &nv_helpers_dx12::kDefaultHeapProps, D3D12_HEAP_FLAG_NONE, &resDesc, D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr, IID_PPV_ARGS(&m_outputResource)));
+	m_outputResource = nv_helpers_dx12::CreateTextureBuffer(m_device.Get(), GetWidth(), GetHeight(), 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE, nv_helpers_dx12::kDefaultHeapProps);
 	// RTX output
 	m_RTOutputHeapIndex = nv_helpers_dx12::CreateBufferView(m_device.Get(), m_outputResource.Get(), m_outputResource->GetGPUVirtualAddress(),
 			m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::UAV);
@@ -418,7 +406,6 @@ void D3D12HelloTriangle::OnRender()
 {
 	// Record all the commands we need to render the scene into the command list.
 	PopulateCommandList();
-
 	// Execute the command list.
 	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
 	m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
@@ -463,8 +450,8 @@ void D3D12HelloTriangle::PopulateCommandList()
 	
 	ThrowIfFailed(m_commandAllocator->Reset());
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-	m_commandList->RSSetViewports(1, &m_viewport);
-	m_commandList->RSSetScissorRects(1, &m_scissorRect);
+	//m_commandList->RSSetViewports(1, &m_viewport);
+	//m_commandList->RSSetScissorRects(1, &m_scissorRect);
 	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 	
 	// UNCOMMENT when add ImGui / Debug lines 
@@ -584,8 +571,7 @@ D3D12HelloTriangle::CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resou
 	return buffers;
 }
 // tuple of bottom level AS,  matrix of the instance and number of hit groups
-void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, 
-	bool updateOnly) {
+void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, bool updateOnly) {
 	if (!updateOnly)
 	{
 		// Gather all the instances into the builder helper 

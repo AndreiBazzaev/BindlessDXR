@@ -108,7 +108,7 @@ inline uint32_t CreateBufferView(ID3D12Device* device, ID3D12Resource* resource,
         case UAV: {
             D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
             uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-            device->CreateUnorderedAccessView(resource, nullptr, &uavDesc, handleRef);
+            device->CreateUnorderedAccessView(resource, nullptr, &uavDesc, handleRef); 
             break;
         }
         case MIP_UAV: {
