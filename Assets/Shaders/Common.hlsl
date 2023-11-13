@@ -62,6 +62,13 @@ struct MaterialStruct {
 struct RenderModeStruct {
 	uint mode;
 };
+struct CamStruct {
+	float4x4 viewInv;
+	float4x4 projectionInv;
+	uint width;
+	uint height;
+	uint padding[28];
+};
 //BINDLESS
 StructuredBuffer<uint> heapIndexes : register(t0, space1);
 ConstantBuffer<RenderModeStruct> renderMode : register(b0, space1);

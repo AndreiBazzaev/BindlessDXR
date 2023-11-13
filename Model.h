@@ -9,11 +9,10 @@ public:
 	//	m_app = app;
 	//}
 	Model() = default;
-	Model* LoadModel(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups);
+	Model* LoadModel(ResourceManager* resManager, const std::string& name);
 	uint64_t m_BlasPointer;
 	uint32_t m_heapPointer;
 	std::string m_name;
-	std::vector<std::string> m_hitGroups;
 	// Remove later
 	//D3D12HelloTriangle* m_app;
 

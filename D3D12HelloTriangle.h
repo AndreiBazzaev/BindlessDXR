@@ -43,7 +43,7 @@ public:
 	void LoadModelRecursive(const std::string& name, Model* model);
 	void UploadScene(Scene* scene);
 private:
-	Model* LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups);
+	Model* LoadModelFromClass(ResourceManager* resManager, const std::string& name);
 
 	// ------REMOVE - GAMEPLAY CALL SIMULATION------
 	void MakeTestScene();
@@ -157,7 +157,7 @@ private:
 		ComPtr<ID3D12Resource> pResult; // Where the AS is 
 		ComPtr<ID3D12Resource> pInstanceDesc; // Hold the matrices of the instances
 	};
-	std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>> m_instances; // Stores BLASes  with the corresponding transforms and number of Hit groups
+	std::vector<std::pair<ComPtr<ID3D12Resource>, DirectX::XMMATRIX>> m_instances; // Stores BLASes  with the corresponding transforms
 
 	AccelerationStructureBuffers
 		CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
@@ -166,7 +166,7 @@ private:
 	// ---------     TLAS   ----------------------------------------
 	/// Create the main acceleration structure that holds all instances of the scene
 	/// param instances : tuple of BLAS, transform in world and hit group number
-	void CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, bool updateOnly = false);
+	void CreateTopLevelAS(const std::vector<std::pair<ComPtr<ID3D12Resource>, DirectX::XMMATRIX>>& instances, bool updateOnly = false);
 	void ReCreateAccelerationStructures();
 	nv_helpers_dx12::TopLevelASGenerator m_topLevelASGenerator; // Helper to create TLAS
 	AccelerationStructureBuffers m_topLevelASBuffers;
@@ -179,8 +179,6 @@ private:
 	ComPtr<ID3D12RootSignature> CreateHitSignature();
 	// Gloabal RS creation 
 	ComPtr<ID3D12RootSignature> CreateGlobalSignature();
-	//-------------------
-	void CreateRaytracingPipeline(); // PSO creation
 	// Shader representation for #RTX
 	ComPtr<IDxcBlob> m_rayGenLibrary;
 	ComPtr<IDxcBlob> m_hitLibrary;
@@ -190,12 +188,10 @@ private:
 	ComPtr<ID3D12RootSignature> m_hitSignature;
 	ComPtr<ID3D12RootSignature> m_missSignature;
 	// ------------------ Global RS
-	ComPtr<ID3D12RootSignature> m_globalSignature;
-	// Ray tracing pipeline state
-	ComPtr<ID3D12StateObject> m_rtStateObject;
-	// Ray tracing pipeline state properties, retaining the shader identifiers
-	// to use in the Shader Binding Table
-	ComPtr<ID3D12StateObjectProperties> m_rtStateObjectProps;
+	ComPtr<ID3D12RootSignature> m_GlobalSignature;
+	// ------------------ Global RT Pipeline
+	ComPtr<ID3D12PipelineState> m_RtPSO;
+	void CreateRtPSO();
 	//-----------------------------------------------------------------
 	ComPtr<ID3D12DescriptorHeap> m_CbvSrvUavHeap;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_CbvSrvUavHandle;
@@ -213,13 +209,14 @@ private:
 	void CreateRaytracingOutputBuffer();
 	ComPtr<ID3D12Resource> m_outputResource; // similar to rtv in #RTX. Shaders write to this buffer
 	uint32_t m_RTOutputHeapIndex;
-	// ---------SBT for connectring Shaders and resources together-----
-	// SBT is the CORE of the DXR, uniting the whole setup
-	void ReCreateShaderBindingTable(Scene* scene);
-	nv_helpers_dx12::ShaderBindingTableGenerator m_sbtHelper;
-	ComPtr<ID3D12Resource> m_sbtStorage;
+	
 	//---------------------------------------------------------------------
 	// CAMERA SETUP - can be replaced for Perry cam later
+	struct camStruct {
+		XMMATRIX viewInv, projInv;
+		UINT32 width, height;
+		UINT32 padding[28];
+	};
 	void CreateCameraBuffer();
 	void UpdateCameraBuffer();
 	ComPtr< ID3D12Resource > m_cameraBuffer;

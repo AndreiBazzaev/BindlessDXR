@@ -58,10 +58,8 @@ void D3D12HelloTriangle::OnInit()
 	FillInSamplerHeap();
 	// Allocate the buffer for output #RTX image
 	CreateRaytracingOutputBuffer();
-	//ThrowIfFailed(m_commandList->Close());
-	CreateRaytracingPipeline();
-
 	//-----COMPUTE INIT------
+	CreateRtPSO();
 	CreateMipMapPSO();
 	//----------------------
 	// Camera
@@ -107,95 +105,14 @@ ComPtr<ID3D12RootSignature> D3D12HelloTriangle::CreateMipMapSignature() {
 	return rsc.Generate(m_device.Get(), false);
 }
 
-// ----------------------------------------------------
-// ---------CREATE RAYTRACING PIPELINE (similar to PSO in rasterization)------
-void D3D12HelloTriangle::CreateRaytracingPipeline()
-{
-	m_globalSignature = CreateGlobalSignature();
-	nv_helpers_dx12::RayTracingPipelineGenerator pipeline(m_device.Get(), m_globalSignature.Get());
-
-	
-
-	
-	// The pipeline contains the DXIL code of all the shaders potentially executed
-	// during the raytracing process. This section compiles the HLSL code into a
-	// set of DXIL libraries. We chose to separate the code in several libraries
-	// by semantic (ray generation, hit, miss) for clarity. Any code layout can be
-	// used.
-	m_rayGenLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/RayGen.hlsl", L"lib_6_6");
-	m_missLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Miss.hlsl", L"lib_6_6");
-	m_hitLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/Hit.hlsl", L"lib_6_6");
-
-	// SHADING-----------------------
-	m_shadowLibrary = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/ShadowRay.hlsl", L"lib_6_6");
-	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowClosestHit" });
-	pipeline.AddLibrary(m_shadowLibrary.Get(), { L"ShadowMiss" });
-	m_shadowSignature = CreateMissSignature();
-	//------------------------------
-	// In a way similar to DLLs, each library is associated with a number of
-	// exported symbols. This
-	// has to be done explicitly in the lines below. Note that a single library
-	// can contain an arbitrary number of symbols, whose semantic is given in HLSL
-	// using the [shader("xxx")] syntax
-	pipeline.AddLibrary(m_rayGenLibrary.Get(), { L"RayGen" });
-	pipeline.AddLibrary(m_missLibrary.Get(), { L"Miss" });
-	pipeline.AddLibrary(m_hitLibrary.Get(), { L"ClosestHit"});//, L"ShadedClosestHit"
-
-	// To be used, each DX12 shader needs a root signature defining which
-	// parameters and buffers will be accessed.
-	m_rayGenSignature = CreateRayGenSignature();
-	m_missSignature = CreateMissSignature();
-	m_hitSignature = CreateHitSignature();
-
-
-	// Hit group for the triangles, with a shader simply interpolating vertex
-	// colors
-	pipeline.AddHitGroup(L"HitGroup", L"ClosestHit");
-	//pipeline.AddHitGroup(L"ShadedHitGroup", L"ShadedClosestHit");
-	pipeline.AddHitGroup(L"ShadowHitGroup", L"ShadowClosestHit");
-	// The following section associates the root signature to each shader. Note
- // that we can explicitly show that some shaders share the same root signature
- // (eg. Miss and ShadowMiss). Note that the hit shaders are now only referred
- // to as hit groups, meaning that the underlying intersection, any-hit and
- // closest-hit shaders share the same root signature.
-	pipeline.AddRootSignatureAssociation(m_rayGenSignature.Get(), { L"RayGen" });
-	pipeline.AddRootSignatureAssociation(m_shadowSignature.Get(),
-		{ L"ShadowHitGroup" });
-	pipeline.AddRootSignatureAssociation(m_missSignature.Get(),
-		{ L"Miss", L"ShadowMiss" });
-	pipeline.AddRootSignatureAssociation(m_hitSignature.Get(),
-		{ L"HitGroup"});//, L"ShadedHitGroup" 
-
-
-
-	// The payload size defines the maximum size of the data carried by the rays,
-	// ie. the the data
-	// exchanged between shaders, such as the HitInfo structure in the HLSL code.
-	// It is important to keep this value as low as possible as a too high value
-	// would result in unnecessary memory consumption and cache trashing.
-	pipeline.SetMaxPayloadSize(8 * sizeof(float)); // RGB + distance
-
-	// Upon hitting a surface, DXR can provide several attributes to the hit. In
-	// our sample we just use the barycentric coordinates defined by the weights
-	// u,v of the last two vertices of the triangle. The actual barycentrics can
-	// be obtained using float3 barycentrics = float3(1.f-u-v, u, v);
-	pipeline.SetMaxAttributeSize(2 * sizeof(float)); // barycentric coordinates
-
-	// The raytracing process can shoot rays from existing hit points, resulting
-	// in nested TraceRay calls. Our sample code traces only primary rays, which
-	// then requires a trace depth of 1. Note that this recursion depth should be
-	// kept to a minimum for best performance. Path tracing algorithms can be
-	// easily flattened into a simple loop in the ray generation.
-	pipeline.SetMaxRecursionDepth(MAX_RECURSION_DEPTH);
-
-	// Compile the pipeline for execution on the GPU
-	m_rtStateObject = pipeline.Generate();
-
-	// Cast the state object into a properties object, allowing to later access
-	// the shader pointers by name
-	ThrowIfFailed(
-		m_rtStateObject->QueryInterface(IID_PPV_ARGS(&m_rtStateObjectProps)));
-
+// ----------RT PSO-----------------------------------
+void D3D12HelloTriangle::CreateRtPSO() {
+	D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+	m_GlobalSignature = CreateGlobalSignature();
+	psoDesc.pRootSignature = m_GlobalSignature.Get();
+	IDxcBlob* computeShader = nv_helpers_dx12::CompileShaderLibrary(L"Assets/Shaders/InlineRT.hlsl", L"cs_6_6");
+	psoDesc.CS = { computeShader->GetBufferPointer(), computeShader->GetBufferSize() };
+	m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_RtPSO));
 }
 // ----------Other PSOs-----------------------------------
 void D3D12HelloTriangle::CreateMipMapPSO() {
@@ -220,31 +137,6 @@ void D3D12HelloTriangle::CreatHeaps() {
 
 	m_SamplerHeap = nv_helpers_dx12::CreateDescriptorHeap(m_device.Get(), 1000, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, true);
 	m_SamplerHandle = m_SamplerHeap->GetCPUDescriptorHandleForHeapStart();
-}
-// --------- For a particular scene recreate an SBT - shader + resource bindings for each BLAS
-void D3D12HelloTriangle::ReCreateShaderBindingTable(Scene* scene) {
-	
-	m_sbtHelper.Reset();
-	// MAKE THESE SHADER DATA RETRIEVED FROM SCENE
-	m_sbtHelper.AddRayGenerationProgram(L"RayGen", {  });
-	m_sbtHelper.AddMissProgram(L"Miss", {});
-	m_sbtHelper.AddMissProgram(L"ShadowMiss", {});
-
-	for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
-		for (auto& hitGroup : scene->m_sceneObjects[i].m_model->m_hitGroups) {
-			std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-			const std::wstring hitName = converter.from_bytes(hitGroup);
-			m_sbtHelper.AddHitGroup(hitName, {});
-		}
-	}
-	uint32_t sbtSize = m_sbtHelper.ComputeSBTSize();
-	m_sbtStorage = nv_helpers_dx12::CreateBuffer(
-		m_device.Get(), sbtSize, D3D12_RESOURCE_FLAG_NONE,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps);
-	if (!m_sbtStorage) {
-		throw std::logic_error("Could not allocate the shader binding table");
-	}
-	m_sbtHelper.Generate(m_sbtStorage.Get(), m_rtStateObjectProps.Get());
 }
 // Load the rendering pipeline dependencies.
 void D3D12HelloTriangle::LoadPipeline()
@@ -467,42 +359,25 @@ void D3D12HelloTriangle::PopulateCommandList()
 	m_commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
 
 	// Set global RS
-	m_commandList->SetComputeRootSignature(m_globalSignature.Get());
+	m_commandList->SetComputeRootSignature(m_GlobalSignature.Get());
 
 	// RT output should be writable in shaders
 	CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition(m_outputResource.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	m_commandList->ResourceBarrier(1, &transition);
-	D3D12_DISPATCH_RAYS_DESC desc = {};
 	
-	// All rayGen shaders first
-	uint32_t rayGenerationSectionSizeInBytes = m_sbtHelper.GetRayGenSectionSize();
-	desc.RayGenerationShaderRecord.StartAddress = m_sbtStorage->GetGPUVirtualAddress();
-	desc.RayGenerationShaderRecord.SizeInBytes = rayGenerationSectionSizeInBytes;
-	
-	// All miss shaedrs - second
-	uint32_t missSectionSizeInBytes = m_sbtHelper.GetMissSectionSize();
-	desc.MissShaderTable.StartAddress = m_sbtStorage->GetGPUVirtualAddress() + rayGenerationSectionSizeInBytes;
-	desc.MissShaderTable.SizeInBytes = missSectionSizeInBytes;
-	desc.MissShaderTable.StrideInBytes = m_sbtHelper.GetMissEntrySize();
-	
-	// All hit groups - third
-	uint32_t hitGroupsSectionSize = m_sbtHelper.GetHitGroupSectionSize();
-	desc.HitGroupTable.StartAddress = m_sbtStorage->GetGPUVirtualAddress() + rayGenerationSectionSizeInBytes + missSectionSizeInBytes;
-	desc.HitGroupTable.SizeInBytes = hitGroupsSectionSize;
-	desc.HitGroupTable.StrideInBytes = m_sbtHelper.GetHitGroupEntrySize();
-	// Window size to dispatch primary rays
-	desc.Width = GetWidth();
-	desc.Height = GetHeight();
-	desc.Depth = 1;
-	// Bind the raytracing pipeline
-	m_commandList->SetPipelineState1(m_rtStateObject.Get());
-
+	//SET PSO
+	m_commandList->SetPipelineState(m_RtPSO.Get());
 	// Heap indexes for Bindless rendering
 	m_commandList->SetComputeRootShaderResourceView(0, m_HeapIndexBuffer.Get()->GetGPUVirtualAddress());
 	m_commandList->SetComputeRoot32BitConstant(1, m_renderMode, 0);
 	// ----------DRAWING ------------------------------------------
 	// Dispatch the rays and write to the raytracing output
-	m_commandList->DispatchRays(&desc);
+	const float threadGroupSize = 8.0;
+	// Calculate the number of thread groups needed to cover the texture
+	int numGroupsX = int(ceil(float(GetWidth()) / threadGroupSize));
+	int numGroupsY = int(ceil(float(GetHeight()) / threadGroupSize));
+	// Downsample into next mip
+	m_commandList->Dispatch(numGroupsX, numGroupsY, 1);
 	//-----------COPY OUTPUT TO RTV + RETURN STATES----------------
 	transition = CD3DX12_RESOURCE_BARRIER::Transition(m_outputResource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	m_commandList->ResourceBarrier(1, &transition);
@@ -571,7 +446,7 @@ D3D12HelloTriangle::CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resou
 	return buffers;
 }
 // tuple of bottom level AS,  matrix of the instance and number of hit groups
-void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID3D12Resource>, DirectX::XMMATRIX, UINT>>& instances, bool updateOnly) {
+void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::pair<ComPtr<ID3D12Resource>, DirectX::XMMATRIX>>& instances, bool updateOnly) {
 	if (!updateOnly)
 	{
 		// Gather all the instances into the builder helper 
@@ -579,7 +454,7 @@ void D3D12HelloTriangle::CreateTopLevelAS(const std::vector<std::tuple<ComPtr<ID
 		{
 			m_topLevelASGenerator.AddInstance(std::get<0>(instances[i]).Get(), std::get<1>(instances[i]), static_cast<UINT>(i),
 				// Hit group id refers to the order in which we added Hit Groups to SBT
-				static_cast<UINT>(std::get<2>(instances[i]) * i)); //2 is for 2 shaders - hit and shadow hit
+				static_cast<UINT>(i)); //1 as 1 sahder is used
 		}
 		UINT64 scratchSize, resultSize, instanceDescsSize;
 		m_topLevelASGenerator.ComputeASBufferSizes(m_device.Get(), true, &scratchSize, &resultSize, &instanceDescsSize);
@@ -621,8 +496,8 @@ void D3D12HelloTriangle::ReCreateAccelerationStructures() {
 }
 // Camera----REWRITE FOR A PROPER CAM--------------------------------------------------------------
 void D3D12HelloTriangle::CreateCameraBuffer() {
-	uint32_t nbMatrix = 4; // view, perspective, viewInv, perspectiveInv 
-	m_cameraBufferSize = nbMatrix * sizeof(XMMATRIX); // discuss, how we can work with GLM instead of DXMath
+	
+	m_cameraBufferSize = sizeof(camStruct); // discuss, how we can work with GLM instead of DXMath
 	// Create the constant buffer for all matrices 
 	m_cameraBuffer = nv_helpers_dx12::CreateBuffer( m_device.Get(), m_cameraBufferSize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, nv_helpers_dx12::kUploadHeapProps); 
 	// Create a descriptor heap that will be used by the rasterization shaders 
@@ -636,30 +511,31 @@ void D3D12HelloTriangle::CreateCameraBuffer() {
 		m_CbvSrvUavHandle, m_CbvSrvUavIndex, nv_helpers_dx12::CBV);
 }
 void D3D12HelloTriangle::UpdateCameraBuffer() {
-	std::vector<XMMATRIX> matrices(4);
+	camStruct cam;
 
 	// Initialize the view matrix, ideally this should be based on user
 	// interactions The lookat and perspective matrices used for rasterization are
 	// defined to transform world-space vertices into a [0,1]x[0,1]x[0,1] camera
 	// space
 	const glm::mat4& mat = nv_helpers_dx12::CameraManip.getMatrix();
-	memcpy(&matrices[0].r->m128_f32[0], glm::value_ptr(mat), 16 * sizeof(float));
+	memcpy(&cam.viewInv.r->m128_f32[0], glm::value_ptr(mat), 16 * sizeof(float));
 
 	float fovAngleY = 45.0f * XM_PI / 180.0f;
-	matrices[1] =
+	cam.projInv =
 		XMMatrixPerspectiveFovRH(fovAngleY, m_aspectRatio, 0.1f, 1000.0f);
 
 	// Raytracing has to do the contrary of rasterization: rays are defined in
 	// camera space, and are transformed into world space. To do this, we need to
 	// store the inverse matrices as well.
 	XMVECTOR det;
-	matrices[2] = XMMatrixInverse(&det, matrices[0]);
-	matrices[3] = XMMatrixInverse(&det, matrices[1]);
-
+	cam.viewInv = XMMatrixInverse(&det, cam.viewInv);
+	cam.projInv = XMMatrixInverse(&det, cam.projInv);
+	cam.width = GetWidth();
+	cam.height = GetHeight();
 	// Copy the matrix contents
 	uint8_t* pData;
 	ThrowIfFailed(m_cameraBuffer->Map(0, nullptr, (void**)&pData));
-	memcpy(pData, matrices.data(), m_cameraBufferSize);
+	memcpy(pData, &cam.viewInv.r->m128_f32[0], m_cameraBufferSize);
 	m_cameraBuffer->Unmap(0, nullptr);
 }
 void D3D12HelloTriangle::UpdateFrameIndexBuffer() {
@@ -1250,15 +1126,12 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 
  }
  // Move to model.cpp?
- Model* D3D12HelloTriangle::LoadModelFromClass(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups)
+ Model* D3D12HelloTriangle::LoadModelFromClass(ResourceManager* resManager, const std::string& name)
  {
 	 Model model;
 	 model.m_name = name;
 	 if (resManager->GetModel(name) == nullptr) {
 		LoadModelRecursive(model.m_name, &model);
-		 for (auto& hitGroup : hitGroups) {
-			 model.m_hitGroups.push_back(hitGroup);
-		 }
 		 resManager->RegisterModel(model.m_name, model);
 	 }
 	// DISCUSSION - THIS WAY WE WON'T BE ABLE TO HAVE DIFFERENT SHADER GROUPS FOR THE SAME MODELS
@@ -1287,12 +1160,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 for (int i = 0; i < scene->m_sceneObjects.size(); i++) {
 
 		 ComPtr<ID3D12Resource> BlasResource = reinterpret_cast<ID3D12Resource*>(scene->m_sceneObjects[i].m_model->m_BlasPointer);
-		 m_instances.push_back({ BlasResource, GlmToXM_mat4(scene->m_sceneObjects[i].m_transform), scene->m_sceneObjects[i].m_model->m_hitGroups.size() });
+		 m_instances.push_back({ BlasResource, GlmToXM_mat4(scene->m_sceneObjects[i].m_transform) });
 	 }
 	 // Update TLAS
 	 ReCreateAccelerationStructures();
-	 // Update SBT
-	 ReCreateShaderBindingTable(scene);
 
 	 // Fill in indexes, used for any set of models
 	 m_AllHeapIndices.push_back(m_RTOutputHeapIndex);
@@ -1556,10 +1427,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
  {
 	
 	 GameObject a, b, c;
-	// a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	// a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf");
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf");
+	c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf");
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Helmet/DamagedHelmet.gltf");
 
 	 a.m_transform = glm::scale(glm::vec3(1.f));
 	 b.m_transform = glm::scale(glm::vec3(0.4f)) * glm::translate(glm::vec3(0.f, 0.f, 0.f));
@@ -1572,7 +1443,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 for (int i = 0; i < 12; i++) {
 
 		 GameObject n;
-		 n.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+		 n.m_model = LoadModelFromClass(&m_resourceManager, "Assets/EmissiveSphere/scene.gltf");
 		
 		 n.m_transform = glm::scale(glm::vec3(randf() + 0.1f)) * glm::translate(glm::vec3(randf() * 10.f - 5.f, randf() * 10.f - 5.f, randf() * 10.f - 5.f));
 		 m_myScene.AddGameObject(n);
@@ -1584,10 +1455,10 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 GameObject a, b, c, d;
 	 Model am, bm, cm, dm;
 
-	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
-	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf", std::vector<std::string>{ "HitGroup", "ShadowHitGroup" });
+	 a.m_model = LoadModelFromClass(&m_resourceManager, "Assets/car/scene.gltf");
+	 b.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Cube/Cube.gltf");
+	 c.m_model = LoadModelFromClass(&m_resourceManager, "Assets/cars2/scene.gltf");
+	 d.m_model = LoadModelFromClass(&m_resourceManager, "Assets/Sponza/Sponza.gltf");
 
 	 a.m_transform = glm::scale(glm::vec3(0.04f));
 	 b.m_transform = glm::scale(glm::vec3(0.5f)) * glm::translate(glm::vec3(2.f, 0.f, 0.f));

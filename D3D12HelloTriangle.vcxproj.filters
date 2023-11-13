@@ -160,5 +160,8 @@
     <FxCompile Include="Assets\Shaders\Random.hlsl">
       <Filter>Assets\Shaders</Filter>
     </FxCompile>
+    <FxCompile Include="Assets\Shaders\InlineRT.hlsl">
+      <Filter>Assets\Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

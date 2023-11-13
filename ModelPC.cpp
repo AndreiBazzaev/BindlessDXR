@@ -1,7 +1,7 @@
 #include "Model.h"
 #include "ResourceManagerImprov.h"
 //#include "D3D12HelloTriangle.h"
-Model* Model::LoadModel(ResourceManager* resManager, const std::string& name, std::vector<std::string>& hitGroups) {
+Model* Model::LoadModel(ResourceManager* resManager, const std::string& name) {
 
 	/*m_name = name;
 	if (resManager->GetModel(name) == nullptr) {
