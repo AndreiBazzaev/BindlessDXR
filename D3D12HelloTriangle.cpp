@@ -261,7 +261,7 @@ void D3D12HelloTriangle::LoadPipeline()
 // Sets the scene to the proper one after the button callback
 void D3D12HelloTriangle::SwitchScenes() {
 	if (m_currentScene != m_requestedScene) {
-		ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+		WaitForPreviousFrame();
 		m_currentScene = m_requestedScene;
 
 		switch (m_currentScene) {
@@ -272,7 +272,7 @@ void D3D12HelloTriangle::SwitchScenes() {
 			MakeTestScene1();
 			break;
 		}
-		WaitForPreviousFrame();
+		
 	}
 }
 // Update frame-based values.
@@ -296,16 +296,16 @@ void D3D12HelloTriangle::OnUpdate()
 // Render the scene.
 void D3D12HelloTriangle::OnRender()
 {
+	//WaitForPreviousFrame();
 	// Record all the commands we need to render the scene into the command list.
 	PopulateCommandList();
 	// Execute the command list.
-	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	ExecuteCmdList();
 
 	// Present the frame.
 	ThrowIfFailed(m_swapChain->Present(1, 0));
 
-	WaitForPreviousFrame();
+	
 	
 }
 
@@ -340,6 +340,18 @@ void D3D12HelloTriangle::OnKeyUp(UINT8 key)
 void D3D12HelloTriangle::PopulateCommandList()
 {
 	
+	const UINT64 fence = m_fenceValue;
+	ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), fence));
+	m_fenceValue++;
+
+	// Wait until the previous frame is finished.
+	if (m_fence->GetCompletedValue() < fence)
+	{
+		ThrowIfFailed(m_fence->SetEventOnCompletion(fence, m_fenceEvent));
+		WaitForSingleObject(m_fenceEvent, INFINITE);
+	}
+
+	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
 	ThrowIfFailed(m_commandAllocator->Reset());
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 	//m_commandList->RSSetViewports(1, &m_viewport);
@@ -390,7 +402,7 @@ void D3D12HelloTriangle::PopulateCommandList()
 
 	// Indicate that the back buffer will now be used to present.
 	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
-	ThrowIfFailed(m_commandList->Close());
+	
 }
 
 void D3D12HelloTriangle::WaitForPreviousFrame()
@@ -413,6 +425,12 @@ void D3D12HelloTriangle::WaitForPreviousFrame()
 	}
 
 	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
+	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+}
+void D3D12HelloTriangle::ExecuteCmdList() {
+	ThrowIfFailed(m_commandList->Close());
+	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
+	m_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 }
 D3D12HelloTriangle::AccelerationStructureBuffers
 D3D12HelloTriangle::CreateBottomLevelAS(std::vector<std::pair<ComPtr<ID3D12Resource>, uint32_t>> vVertexBuffers,
@@ -485,14 +503,8 @@ void D3D12HelloTriangle::ReCreateAccelerationStructures() {
 			m_TlasHeapIndex);
 	}
 
-	m_commandList->Close();
-	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	m_fenceValue++;
-	m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	WaitForSingleObject(m_fenceEvent, INFINITE);
-	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+	ExecuteCmdList();
+	WaitForPreviousFrame();
 }
 // Camera----REWRITE FOR A PROPER CAM--------------------------------------------------------------
 void D3D12HelloTriangle::CreateCameraBuffer() {
@@ -622,14 +634,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 // ---------------Heap Data Update------------------------
 	 nv_helpers_dx12::ChangeSRVResourceLoaction(m_device.Get(), newPrimBuffer.Get(), m_CbvSrvUavHeap.Get(), model->m_heapPointer, sizeof(uint32_t));
 	 
-	 ThrowIfFailed(m_commandList->Close());
-	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	 m_fenceValue++;
-	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	 WaitForSingleObject(m_fenceEvent, INFINITE);
-	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+	 ExecuteCmdList();
+	 WaitForPreviousFrame();
+	 
 
 	 AccelerationStructureBuffers AS = CreateBottomLevelAS(modelVertexAndNum, modelIndexAndNum, transforms);
 	 ComPtr<ID3D12Resource> m_modelBLASBuffer = AS.pResult;
@@ -1141,15 +1148,6 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
  // Move to scene.cpp?
  void D3D12HelloTriangle::UploadScene(Scene* scene)
  {
-	 // Sync with model data uploading
-	 m_commandList->Close();
-	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	 m_fenceValue++;
-	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	 WaitForSingleObject(m_fenceEvent, INFINITE);
-	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 	 // Clear
 	 m_instances.clear();
 	 m_AllHeapIndices.clear();
@@ -1179,12 +1177,7 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 nv_helpers_dx12::CopyToDirectResource(m_device.Get(), m_commandList.Get(), m_HeapIndexBuffer.Get(), m_AllHeapIndices.data(), sizeof(uint32_t) * m_AllHeapIndices.size());
 
 	 // Close cmd list
-	 ThrowIfFailed(m_commandList->Close()); 
-	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	 m_fenceValue++;
-	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	 WaitForSingleObject(m_fenceEvent, INFINITE);
+	 ExecuteCmdList();
  }
  // Move this to helper?
  XMMATRIX D3D12HelloTriangle::GlmToXM_mat4(glm::mat4 gmat) {
@@ -1400,15 +1393,9 @@ void D3D12HelloTriangle::OnMouseMove(UINT8 wParam, UINT32 lParam) {
 	 transition = CD3DX12_RESOURCE_BARRIER::Transition(texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ, texture.Get()->GetDesc().MipLevels - 1);
 	 m_commandList->ResourceBarrier(1, &transition);
 
-	 ThrowIfFailed(m_commandList->Close());
-	 ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
-	 m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	 m_fenceValue++;
-	 m_commandQueue->Signal(m_fence.Get(), m_fenceValue);
-	 m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
-	 WaitForSingleObject(m_fenceEvent, INFINITE);
-	 ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-	
+	 ExecuteCmdList();
+	 WaitForPreviousFrame();
+	 
 	 pUavHeap.Reset();
 	 mipUAVs.clear();
 	 

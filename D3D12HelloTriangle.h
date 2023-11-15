@@ -145,6 +145,7 @@ private:
 	void LoadPipeline();
 	void PopulateCommandList();
 	void WaitForPreviousFrame();
+	void ExecuteCmdList();
 
 	// We need to know if we can run RTX #RTX
 	void CheckRaytracingSupport();
